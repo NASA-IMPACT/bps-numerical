@@ -43,6 +43,17 @@ def standardize_gene_data(fname: Union[str, pd.DataFrame]) -> pd.DataFrame:
     return df
 
 
+def merge_gene_phenotype(
+    data_gene: Union[str, pd.DataFrame],
+    data_phenotype: Union[str, pd.DataFrame],
+    on: str = "Sample",
+) -> pd.DataFrame:
+    logger.info("Merging gene-phenotype dataframes...")
+    data_gene = load_csv(data_gene)
+    data_phenotype = load_csv(data_phenotype)
+    return pd.merge(data_phenotype, data_gene, on=on, how="outer").reset_index(drop=True)
+
+
 def main():
     pass
 
