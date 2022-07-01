@@ -54,18 +54,18 @@ class CorrelationClusterer:
             - each key is a integer label index
             - each value is a list of feature/column names
         """
+        if self.cluster_map:
+            logger.info(f"Using cached cluster_map of size {len(self.cluster_map)}")
+            return self.cluster_map
+
         if isinstance(arr, pd.DataFrame):
-            if self.debug:
-                logger.debug(f"Computing correlation for {arr.shape}")
+            logger.debug(f"Computing correlation for {arr.shape}")
             arr = CorrelationClusterer._CORRELATION_FUNCS.get(
                 self.correlation_type, CorrelationClusterer.compute_pearson_correlation
             )(arr)
 
         start = time.time()
         assert arr.shape[0] == arr.shape[1]
-        if self.cluster_map:
-            logger.info(f"Using cached cluster_map of size {len(self.cluster_map)}")
-            return self.cluster_map
 
         n_features = kwargs.get("n_features", arr.shape[0])
         truncated_mode = False
@@ -83,10 +83,13 @@ class CorrelationClusterer:
         self.labels = labels
         self.cluster_map = self._group_by_labels(cols, labels)
 
-        logger.debug(f"Took {time.time()-start} to form {len(self.cluster_map)} clusters...")
+        logger.debug(
+            f"Took {time.time()-start} seconds to form {len(self.cluster_map)} clusters..."
+        )
         return self.cluster_map
 
     def _cluster(self, arr: np.ndarray, columns: List[str], cutoff_threshold: float = 0.5):
+        logger.info("Clustering in progress...")
         dists = 1 - np.round(abs(arr), 3)
         hierarchy = sch.linkage(squareform(dists), method='average')
         labels = sch.fcluster(hierarchy, cutoff_threshold, criterion='distance')
