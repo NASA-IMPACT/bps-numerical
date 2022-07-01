@@ -1,21 +1,15 @@
 #!/usr/bin/env python3
 
-import os
 import sys
 import time
+
+import click
+from bps_numerical.preprocessing import merge_gene_phenotype, standardize_gene_data
+from loguru import logger
 
 sys.path.append("./")
 sys.path.append("../code/")
 sys.path.append("./code/")
-
-import pandas as pd
-
-import click
-
-from loguru import logger
-
-from bps_numerical.misc.datatools import load_csv
-from bps_numerical.preprocessing import standardize_gene_data, merge_gene_phenotype
 
 
 @click.command()

@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 
-import os
-import sys
-
-import pandas as pd
 
 from typing import Union
 
+import pandas as pd
 from loguru import logger
 
 from .misc.datatools import load_csv
@@ -48,6 +45,10 @@ def merge_gene_phenotype(
     data_phenotype: Union[str, pd.DataFrame],
     on: str = "Sample",
 ) -> pd.DataFrame:
+    """
+    Merge gene and metadata/phenotype dataframes into single
+    based on a common column `on`.
+    """
     logger.info("Merging gene-phenotype dataframes...")
     data_gene = load_csv(data_gene)
     data_phenotype = load_csv(data_phenotype)

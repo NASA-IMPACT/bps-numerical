@@ -1,20 +1,14 @@
 #!/usr/bin/env python3
 
-import os
 import sys
-import time
+
+from bps_numerical.clustering import CorrelationClusterer
+from bps_numerical.feature_selection import FirstFeatureSelector
+from bps_numerical.preprocessing import standardize_gene_data
 
 sys.path.append("./")
 sys.path.append("../code/")
 sys.path.append("./code/")
-
-import click
-import pandas as pd
-from bps_numerical.clustering import CorrelationClusterer
-from bps_numerical.feature_selection import FirstFeatureSelector
-from bps_numerical.misc.datatools import load_csv
-from bps_numerical.preprocessing import merge_gene_phenotype, standardize_gene_data
-from loguru import logger
 
 
 def main():

@@ -120,10 +120,10 @@ class CorrelationClusterer:
     def _group_by_labels(self, columns: List[str], labels: List[int]) -> Dict[int, List[int]]:
         assert len(labels) == len(columns)
         cluster_map = {}
-        for l, f in zip(labels, columns):
-            group = cluster_map.get(l, [])
-            group.append(f)
-            cluster_map[l] = group
+        for label, col in zip(labels, columns):
+            group = cluster_map.get(label, [])
+            group.append(col)
+            cluster_map[label] = group
         return cluster_map
 
     _CORRELATION_FUNCS = dict(

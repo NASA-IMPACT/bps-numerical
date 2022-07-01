@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
-import os
 import random
-import sys
-
 from typing import Optional, Union
 
 import pandas as pd
