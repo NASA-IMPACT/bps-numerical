@@ -68,15 +68,14 @@ class CorrelationClusterer:
         assert arr.shape[0] == arr.shape[1]
 
         n_features = kwargs.get("n_features", arr.shape[0])
-        truncated_mode = False
+
+        # this exists to avoid trivial slicing
         if n_features != arr.shape[0]:
             if self.debug:
                 logger.debug(f"Using n_features = {n_features} | Sliced array")
             arr = arr[:n_features, :n_features]
-            truncated_mode = True
 
-        cols = self.column_names if not truncated_mode else self.column_names[:n_features]
-
+        cols = self.column_names[:n_features]
         labels = self._cluster(arr, cutoff_threshold=self.cutoff_threshold, columns=cols)
         assert len(labels) == len(cols)
 
