@@ -35,8 +35,10 @@ def load_csv(
 
 
 def main():
-    src = "/Users/nishparadox/dev/uah/nasa-impact/gene-experiments/data/merged.csv"
-    src = "/Users/nishparadox/dev/uah/nasa-impact/gene-experiments/data/meta-2.csv"
+    # sanity check
+    import os
+
+    src = os.get("BPS_METADATA_CSV")
     df = load_csv(src, p=0.1, n_samples=None, random_sampling=True)
     print(df.shape)
 

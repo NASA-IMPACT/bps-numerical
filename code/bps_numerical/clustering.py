@@ -68,12 +68,9 @@ class CorrelationClusterer:
         assert arr.shape[0] == arr.shape[1]
 
         n_features = kwargs.get("n_features", arr.shape[0])
-
-        # this exists to avoid trivial slicing
-        if n_features != arr.shape[0]:
-            if self.debug:
-                logger.debug(f"Using n_features = {n_features} | Sliced array")
-            arr = arr[:n_features, :n_features]
+        if self.debug:
+            logger.debug(f"Using n_features = {n_features} | Slicing array...")
+        arr = arr[:n_features, :n_features]
 
         cols = self.column_names[:n_features]
         labels = self._cluster(arr, cutoff_threshold=self.cutoff_threshold, columns=cols)
@@ -87,7 +84,30 @@ class CorrelationClusterer:
         )
         return self.cluster_map
 
-    def _cluster(self, arr: np.ndarray, columns: List[str], cutoff_threshold: float = 0.5):
+    def _cluster(
+        self, arr: np.ndarray, columns: List[str], cutoff_threshold: float = 0.5
+    ) -> List[int]:
+        """
+        Computes flattened clusters using agglomerative clustering.
+
+        Args:
+            arr: ```np.ndarray```
+                Input correlation array of shape: NxN
+
+            cutoff_threshold: ```float```
+                The distance cutoff to separate two clusters.
+
+                Note: This value doesn't mean "correlation score".
+                It is meant as a geometric distance cutoff.
+
+            columns: ```List[str]```
+                Column/gene names to be assigned for the cluster plot
+                Note: is only used for debug mode
+
+        Returns:
+            List of integer labels. Each label has one-to-one correspondence
+            to the gene columns.
+        """
         logger.info("Clustering in progress...")
         dists = 1 - np.round(abs(arr), 3)
         hierarchy = sch.linkage(squareform(dists), method='average')
@@ -120,6 +140,11 @@ class CorrelationClusterer:
         return labels
 
     def _group_by_labels(self, columns: List[str], labels: List[int]) -> Dict[int, List[int]]:
+        """
+        This method creates the cluster map (dict) where:
+            - key represents cluster label
+            - value is a list of column/gene strings
+        """
         assert len(labels) == len(columns)
         cluster_map = {}
         for label, col in zip(labels, columns):

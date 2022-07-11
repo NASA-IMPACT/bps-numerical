@@ -11,7 +11,20 @@ from .clustering import CorrelationClusterer
 
 
 class FeatureSelector(ABC):
+    """
+    This component is used for selecting features
+    after clustering.
+    """
+
     def __init__(self, clusterer: CorrelationClusterer) -> None:
+        """
+        Args:
+            clusterer: ```CorrelationClusterer```
+                clustering object of the type CorrelationClusterer.
+                If provided, and if the input `cluster_map` to
+                `select_features(...)` method is invalid, this object
+                is used to compute the cluster
+        """
         self.clusterer = clusterer
 
     def __call__(
@@ -28,6 +41,23 @@ class FeatureSelector(ABC):
         cluster_map: Optional[Dict[int, List[str]]] = None,
         **kwargs,
     ) -> List[str]:
+        """
+        This is the entrypoint method to do feature selection
+
+        Args:
+            df: ```Optional[pd.DataFrame]```
+                Pandas dataframe (df) with only genes features
+
+                If `cluster_map` is not provided, this dataframe
+                is used to recompute all the clusters and then do the selection.
+
+            cluster_map: ```Optional[dict]```
+                A dictionary cache for final cluster.
+                See `bps_numerica.clustering.CorrelationClusterer` for more reference
+
+                If this is provided, we try to use it directly to remove any
+                re-calculation
+        """
         cluster_map = self._get_cluster_map(df, cluster_map, **kwargs)
         if not isinstance(cluster_map, dict):
             raise TypeError(f"Invalid type for cluster_map. Expected dict. Got {type(cluster_map)}")
