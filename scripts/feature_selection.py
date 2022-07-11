@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 
 sys.path.append("./")
@@ -12,10 +13,7 @@ from bps_numerical.preprocessing import standardize_gene_data
 
 
 def main():
-    gene_csv = (
-        "/Users/nishparadox/dev/uah/nasa-impact/gene-experiments/data/OneDrive_1_3-21-2022/gen.csv"
-    )
-
+    gene_csv = os.getenv("BPS_GENE_CSV")
     df_genes = standardize_gene_data(gene_csv)
     df_genes.pop("Sample")
     clusterer = CorrelationClusterer(list(df_genes.columns), cutoff_threshold=0.3, debug=False)

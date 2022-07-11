@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 import time
 
@@ -35,20 +36,21 @@ def merge_and_dump(
 
 
 def main():
-    # gene_csv = (
-    #     "/Users/nishparadox/dev/uah/nasa-impact/gene-experiments/data/OneDrive_1_3-21-2022/gen.csv"
-    # )
-    # phenotype_csv = (
-    #     "/Users/nishparadox/dev/uah/nasa-impact/gene-experiments/data/OneDrive_1_3-21-2022/meta.csv"
-    # )
 
-    # df_gene = standardize_gene_data(gene_csv)
+    gene_csv = os.getenv("BPS_GENE_CSV")
+    phenotype_csv = os.getenv("BPS_PHENOTYPE_CSV")
+    output_csv = os.getenv("BPS_MERGE_CSV", "tmp/merged.csv")
+    merge_column = os.getenv("BPS_MERGE_COLUMN", "Sample")
 
-    # df_merged = merge_gene_phenotype(data_gene=df_gene, data_phenotype=phenotype_csv, on="Sample")
-    # print(df_merged.shape)
-    # print(df_merged.head())
+    df_gene = standardize_gene_data(gene_csv)
 
-    merge_and_dump()
+    df_merged = merge_gene_phenotype(
+        data_gene=df_gene, data_phenotype=phenotype_csv, on=merge_column
+    )
+    print(df_merged.shape)
+    print(df_merged.head())
+
+    # df_merged = merge_and_dump(gene_csv, phenotype_csv, merge_column, output_csv)
 
 
 if __name__ == "__main__":
