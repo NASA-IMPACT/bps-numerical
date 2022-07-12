@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 
 import os
-import sys
-
-sys.path.append("./")
-sys.path.append("../code/")
-sys.path.append("./code/")
 
 from bps_numerical.clustering import CorrelationClusterer
 from bps_numerical.feature_selection import FirstFeatureSelector

@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
 
 import os
-import sys
 import time
 
 import click
 from bps_numerical.preprocessing import merge_gene_phenotype, standardize_gene_data
 from loguru import logger
-
-sys.path.append("./")
-sys.path.append("../code/")
-sys.path.append("./code/")
 
 
 @click.command()
@@ -39,7 +34,7 @@ def main():
 
     gene_csv = os.getenv("BPS_GENE_CSV")
     phenotype_csv = os.getenv("BPS_PHENOTYPE_CSV")
-    output_csv = os.getenv("BPS_MERGE_CSV", "tmp/merged.csv")
+    # output_csv = os.getenv("BPS_MERGE_CSV", "tmp/merged.csv")
     merge_column = os.getenv("BPS_MERGE_COLUMN", "Sample")
 
     df_gene = standardize_gene_data(gene_csv)
