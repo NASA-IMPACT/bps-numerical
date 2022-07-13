@@ -16,13 +16,39 @@ from .classifiers import (
 
 
 class FeatureScorer(ABC):
+    """
+    This represents a type of FeatureScorer.
+    Any downstream children should implement `get_features` method.
+    """
+
     @abstractmethod
     def get_features(
         self,
-        top_k: int = 100,
+        top_k: int = 500,
         columns: Optional[List[str]] = None,
         **kwargs,
     ) -> List[Tuple[str, float]]:
+        """
+        This is an abstract method to implement.
+
+        Args:
+            `top_k`: ```int```
+                Top k most important features to return
+            `columns`: ```Optional[List[str]]```
+                List of input columns used for mapping the feature names
+
+        Returns:
+            List[Tuple[str, float]] where each tuple is of:
+                - first element -> feature name
+                - second element -> feature score value
+
+            Eg:
+                .. code-block: python
+                    [
+                        ('ENSMUSG00000020889', 1.0),
+                        ('ENSMUSG00000115420', 0.25354915857315063)
+                    ]
+        """
         raise NotImplementedError()
 
     @staticmethod
@@ -32,6 +58,37 @@ class FeatureScorer(ABC):
         ignore_zeros: bool = False,
         normalize: bool = False,
     ) -> List[Tuple[str, float]]:
+        """
+        Get top-k important features in descending order
+        (first element as the most important feature)
+
+        Args:
+            `model`: ```Type[BaseEstimator]```
+                Models derived from sklearn's BaseEstimator class
+                (eg: `xgboost.XGBClassifier`)
+            `top_k`: ```int```
+                Top k most important features to return
+            `ignore_zeros`: ```bool```
+                If enabled, all the features which has *zero* (0) scores
+                will be removed
+            `normalize`: ```bool```
+                If enabled, feature scores will be normalized in [0, 1] range
+                using min-max normalization.
+                (Highest feature will have 1.0 score)
+        Returns:
+            List[Tuple[str, float]] where each tuple is of:
+                - first element -> feature name
+                - second element -> feature score value
+
+            Eg:
+                .. code-block: python
+                    [
+                        ('ENSMUSG00000020889', 1.0),
+                        ('ENSMUSG00000115420', 0.25354915857315063)
+                    ]
+
+
+        """
         cols = list(model.feature_names_in_)
         importances = model.feature_importances_
         if normalize:
@@ -45,6 +102,25 @@ class FeatureScorer(ABC):
 
 
 class PhenotypeFeatureScorer(FeatureScorer):
+    """
+    This encapsulates "important" feature computation
+    for any classifier/models.
+
+    Input can be of any type:
+        - `Type[AbstractPhenotypeClassifier]`
+        - `Type[BaseEstimator]`
+
+    All the components derived from AbstractPhenotypeClassifier and BaseEstimator
+    represent trained model.
+
+    If the type is `SinglePhenotypeClassifier`, then `SinglePhenotypeClassifier.model`
+    is used to compute the feature.
+
+    If the type is `MultiPhenotypeIsolatedClassifier`, then `MultiPhenotypeIsolatedClassifier.classifiers`
+    is used to compute the feature, where we can access `model` attribute for eahc of
+    those clasifiers.
+    """
+
     def __init__(
         self, *classifiers: Tuple[Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]]]
     ):
@@ -66,6 +142,26 @@ class PhenotypeFeatureScorer(FeatureScorer):
         columns: Optional[List[str]] = None,
         **kwargs,
     ) -> List[Tuple[str, float]]:
+        """
+        This is the entrypoint to compute feature importance
+        Args:
+            `top_k`: ```int```
+                Top k most important features to return
+            `columns`: ```Optional[List[str]]```
+                List of input columns used for mapping the feature names
+
+        Returns:
+            List[Tuple[str, float]] where each tuple is of:
+                - first element -> feature name
+                - second element -> feature score value
+
+            Eg:
+                .. code-block: python
+                    [
+                        ('ENSMUSG00000020889', 1.0),
+                        ('ENSMUSG00000115420', 0.25354915857315063)
+                    ]
+        """
         ignore_zeros = kwargs.get("ignore_zeros", False)
         normalize = kwargs.get("normalize", False)
         if len(self.models) == 1:

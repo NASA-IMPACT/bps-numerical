@@ -2,7 +2,7 @@
 
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 import numpy as np
 import pandas as pd
@@ -15,12 +15,30 @@ from tqdm import tqdm
 
 
 class AbstractPhenotypeClassifier(ABC):
+    """
+    This represents the component type for training the ML models
+    """
+
     def __init__(self, cols_genes: List[str], debug: bool = False) -> None:
         self.cols_genes = list(cols_genes)
         self.debug = debug
 
     @abstractmethod
     def train(self, data: pd.DataFrame, test_size: float = 0.2, **kwargs) -> dict:
+        """
+        This method is used for performing overall training using the
+        incoming pre-processed dataframe.
+
+        Args:
+            `data`: ```pd.DataFrame```
+                Incoming pre-processed dataframe to use for training
+            `test_size`: ```float```
+                What's the size of test dataset?
+
+        Returns:
+            A dictionary whose structure depends on the implementation of
+            child components.
+        """
         raise NotImplementedError()
 
     def fit(
@@ -32,6 +50,9 @@ class AbstractPhenotypeClassifier(ABC):
         Y_test,
         **kwargs,
     ) -> Dict[str, float]:
+        """
+        This method is used for fitting the incoming model
+        """
         start = time.time()
 
         if self.debug:
@@ -42,8 +63,8 @@ class AbstractPhenotypeClassifier(ABC):
 
         model.fit(X_train, Y_train)
         metrics = {
-            "train_score": self.model.score(X_train, Y_train),
-            "test_score": self.model.score(X_test, Y_test),
+            "train_score": model.score(X_train, Y_train),
+            "test_score": model.score(X_test, Y_test),
         }
 
         end = time.time()
@@ -65,7 +86,25 @@ class AbstractPhenotypeClassifier(ABC):
 
 class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
     """
-    Trains only single class
+    This classifer is used for training a single model for
+    a single specific phenotype.
+
+    Note:
+        We use `MultiPhenotypeIsolatedClassifier` to perform N-different
+        classification independently, each for separate phenotype.
+        Then, we use `bps_numerical.classification.feature_scorers.PhenotypeFetureScorer`
+        for computing common genes between different phenotypes.
+
+    Args:
+        `cols_genes`: ```List[str]```
+            Input gene/feature names to be used for classification
+        `phenotype`: ```str```
+            Name of target phenotype to be used for classification
+        `model`: ```Optional[BaseEstimator]```
+            Model to be used for classification.
+            If not provided, defaults to default `xgboost.XGBClassifier`
+        `debug`: ```bool```
+            If enabled, debugging logs will be printed
     """
 
     def __init__(
@@ -79,7 +118,38 @@ class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
         self.phenotype = phenotype
         self.model = model or xgboost.XGBClassifier()
 
-    def train(self, data: pd.DataFrame, test_size: float = 0.2):
+    def train(self, data: pd.DataFrame, test_size: float = 0.2) -> Dict[str, Any]:
+        """
+        This method is used for performing overall training using the
+        incoming pre-processed dataframe.
+
+        Args:
+            `data`: ```pd.DataFrame```
+                Incoming pre-processed dataframe to use for training
+            `test_size`: ```float```
+                What's the size of test dataset?
+
+        Returns:
+            A dictionary of the form:
+
+            Sample output dict:
+
+                .. code-block: python
+                    {
+                        'classification_report': {
+                            'animalreturn_isst': {'f1-score': 1.0, 'precision': 1.0, 'recall': 1.0, 'support': 973},
+                            'animalreturn_lar': {'f1-score': 1.0, 'precision': 1.0, 'recall': 1.0, 'support': 394},
+                            'macro avg': {'f1-score': 1.0, 'precision': 1.0, 'recall': 1.0, 'support': 1367},
+                            'micro avg': {'f1-score': 1.0, 'precision': 1.0, 'recall': 1.0, 'support': 1367},
+                            'samples avg': {'f1-score': 1.0, 'precision': 1.0, 'recall': 1.0, 'support': 1367},
+                            'weighted avg': {'f1-score': 1.0, 'precision': 1.0, 'recall': 1.0, 'support': 1367},
+                        },
+                        'confusion_matrix': array([[973, 0], [0, 394]]),
+                        'labels': ['animalreturn_isst', 'animalreturn_lar'],
+                        'test_score': 1.0,
+                        'train_score': 1.0,
+                    }
+        """
         target_counts = data[self.phenotype].value_counts()
         data = data[self.cols_genes + [self.phenotype]]
         data = pd.get_dummies(data)
@@ -104,6 +174,17 @@ class MultiPhenotypeIsolatedClassifier:
     """
     Trains N different independent multi-class model.
     Same train/test data is used for each of the model.
+
+    Args:
+        `cols_genes`: ```List[str]```
+            Input gene/feature names to be used for classification
+        `phenotype`: ```str```
+            Name of target phenotype to be used for classification
+        `model`: ```Optional[BaseEstimator]```
+            Model to be used for classification.
+            If not provided, defaults to default `xgboost.XGBClassifier`
+        `debug`: ```bool```
+            If enabled, debugging logs will be printed
     """
 
     def __init__(
@@ -117,6 +198,115 @@ class MultiPhenotypeIsolatedClassifier:
         self.debug = debug
 
     def train(self, data: pd.DataFrame, test_size: float = 0.2):
+        """
+        This method is used for performing overall training using the
+        incoming pre-processed dataframe.
+
+        Args:
+            `data`: ```pd.DataFrame```
+                Incoming pre-processed dataframe to use for training
+            `test_size`: ```float```
+                What's the size of test dataset?
+
+        Returns:
+            A dictionary whose key is the name of phenotype class and
+            value is another `dict` of the form returned by any `SinglePhenotypeClassifier.train`
+
+        Sample output dict:
+            .. code-block: python
+                {
+                    "animalreturn": {
+                        "classification_report": {
+                            "animalreturn_ISST": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 973,
+                            },
+                            "animalreturn_LAR": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 394,
+                            },
+                            "macro avg": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 1367,
+                            },
+                            "micro avg": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 1367,
+                            },
+                            "samples avg": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 1367,
+                            },
+                            "weighted avg": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 1367,
+                            },
+                        },
+                        "confusion_matrix": array([[973, 0], [0, 394]]),
+                        "labels": ["animalreturn_ISST", "animalreturn_LAR"],
+                        "test_score": 1.0,
+                        "train_score": 1.0,
+                    },
+                    "condition": {
+                        "classification_report": {
+                            "condition_FLT": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 710,
+                            },
+                            "condition_GC": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 657,
+                            },
+                            "macro avg": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 1367,
+                            },
+                            "micro avg": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 1367,
+                            },
+                            "samples avg": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 1367,
+                            },
+                            "weighted avg": {
+                                "f1-score": 1.0,
+                                "precision": 1.0,
+                                "recall": 1.0,
+                                "support": 1367,
+                            },
+                        },
+                        "confusion_matrix": array([[710, 0], [0, 657]]),
+                        "labels": ["condition_FLT", "condition_GC"],
+                        "test_score": 1.0,
+                        "train_score": 1.0,
+                    },
+                }
+
+        """
+
         target_columns_full = list(set(data.columns) - set(self.cols_genes))
         data_x = data[self.cols_genes]
         data_y_full = data[target_columns_full]
