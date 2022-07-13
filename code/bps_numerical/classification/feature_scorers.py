@@ -185,7 +185,7 @@ class PhenotypeFeatureScorer(FeatureScorer):
         if len(features_list) == 1:
             return features_list[0]
 
-        _mapify = lambda fts: dict(fts)
+        _mapify = lambda fts: dict(fts)  # noqa: E731
 
         features_first = _mapify(features_list[0])
         common = set(features_first.keys())
