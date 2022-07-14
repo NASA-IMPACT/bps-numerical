@@ -2,9 +2,12 @@
 
 from abc import ABC, abstractmethod
 from functools import partial
+from pprint import pprint
 from typing import List, Optional, Tuple, Type, Union
 
 import numpy as np
+import pandas as pd
+from loguru import logger
 from sklearn.base import BaseEstimator
 
 from ..misc.maths import min_max_normalization
@@ -198,6 +201,70 @@ class PhenotypeFeatureScorer(FeatureScorer):
 
         scoremap = {name: score / len(features_list) for name, score in scoremap.items()}
         return sorted(list(scoremap.items()), key=lambda x: x[1], reverse=True)
+
+
+class GeneRanker(FeatureScorer):
+    """
+    This is used for performing feature ranking/scoring for a single genotype
+    by fitting in independent models and getting the common features.
+    """
+
+    def __init__(
+        self, cols_genes: List[str], phenotype: str, n_runs: int = 3, debug: bool = False
+    ) -> None:
+
+        self.classifiers = [
+            SinglePhenotypeClassifier(cols_genes=cols_genes, phenotype=phenotype, debug=debug)
+            for _ in range(n_runs)
+        ]
+        self.results = []
+        self.debug = debug
+        self.phenotype = phenotype
+
+    def get_features(self, data: pd.DataFrame, test_size: float = 0.2, **kwargs) -> dict:
+        self.results = [clf.train(data, test_size) for clf in self.classifiers]
+
+        ignore_zeros = kwargs.get("ignore_zeros", True)
+        normalize = kwargs.get("normalize", True)
+        top_k = kwargs.get("top_k", 500)
+
+        if self.debug:
+            pprint(self.results)
+            self._debug_plot_hist(**kwargs)
+
+        return PhenotypeFeatureScorer(*self.classifiers).get_features(
+            top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
+        )
+
+    def _debug_plot_hist(self, **kwargs):
+        if not self.debug:
+            return
+        ignore_zeros = kwargs.get("ignore_zeros", True)
+        normalize = kwargs.get("normalize", True)
+        top_k = kwargs.get("top_k", 500)
+        nfeatures = []
+        for clf in self.classifiers:
+            features = PhenotypeFeatureScorer(clf).get_features(
+                top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
+            )
+            nfeatures.append(len(features))
+            logger.debug(f"{clf.phenotype} | {len(features)}")
+
+        try:
+            import plotly.express as px
+
+            _df_counter = pd.DataFrame(enumerate(nfeatures), columns=["run", "n_feature"])
+            fig = px.bar(
+                _df_counter,
+                x="run",
+                y="n_feature",
+                title=f"run vs n_feature for {self.phenotype}",
+                text_auto=True,
+            )
+            fig.update_layout(yaxis=dict(tickfont=dict(size=kwargs.get("debug_font_size", 7))))
+            fig.show()
+        except:
+            logger.warning("Cannot plot histogram. plotly might not be installed.")
 
 
 def main():
