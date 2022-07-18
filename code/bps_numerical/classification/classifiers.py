@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import copy
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Type
@@ -170,7 +171,7 @@ class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
         return tracker
 
 
-class MultiPhenotypeIsolatedClassifier:
+class MultiPhenotypeIsolatedClassifier(AbstractPhenotypeClassifier):
     """
     Trains N different independent multi-class model.
     Same train/test data is used for each of the model.
@@ -334,6 +335,63 @@ class MultiPhenotypeIsolatedClassifier:
             tracker[clf.phenotype].update(metrics)
 
         return tracker
+
+
+class BulkTrainer(AbstractPhenotypeClassifier):
+    """
+    A wrapper around `SinglePhenotypeClassifier` and `MultiPhenotypeIsolatedClassifier`
+    to train them N different times.
+    That is: it performs training N times separately, independently.
+
+    Args:
+        `cols_genes`: ```List[str]```
+            Input gene/feature names to be used for classification
+        `classifiers`: ```List[Union[SinglePhenotypeClassifier, MultiPhenotypeIsolatedClassifier]]```
+            Classifiers to be used for classification.
+        `debug`: ```bool```
+            If enabled, debugging logs will be printed
+    """
+
+    def __init__(
+        self,
+        cols_genes: List[str],
+        classifiers: List[SinglePhenotypeClassifier],
+        n_runs: int = 3,
+        debug: bool = False,
+    ) -> None:
+        self.cols_genes = list(cols_genes)
+        self.n_runs = n_runs
+        self.debug = debug
+        self.results = []
+
+        # each input classifier is copied for each run
+        # to avoid re-using same model across different runs
+        self.classifiers = [copy.deepcopy(classifiers) for _ in range(n_runs)]
+
+    def train(self, data: pd.DataFrame, test_size: float = 0.2) -> List[List[dict]]:
+        """
+        This method is used for training the input classifiers N different times
+
+        Args:
+            `data`: ```pd.DataFrame```
+                Incoming pre-processed dataframe to use for training
+            `test_size`: ```float```
+                What's the size of test dataset?
+
+        Note:
+            Every time this method is run, the `self.results`
+            will be overridden by the new results.
+        """
+        results = []
+        for run in tqdm(range(self.n_runs)):
+            res = []
+            for clf in self.classifiers[run]:
+                res.append(clf.train(data, test_size))
+            results.append(res)
+
+        # replace the old cache
+        self.results = results
+        return results
 
 
 def main():
