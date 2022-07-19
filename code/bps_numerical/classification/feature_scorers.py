@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import itertools
+import operator
 from abc import ABC, abstractmethod
-from functools import partial
+from functools import partial, reduce
 from pprint import pprint
 from typing import List, Optional, Tuple, Type, Union
 
@@ -13,6 +15,7 @@ from sklearn.base import BaseEstimator
 from ..misc.maths import min_max_normalization
 from .classifiers import (
     AbstractPhenotypeClassifier,
+    BulkTrainer,
     MultiPhenotypeIsolatedClassifier,
     SinglePhenotypeClassifier,
 )
@@ -135,6 +138,7 @@ class PhenotypeFeatureScorer(FeatureScorer):
                 clf = [clf.model]
             elif isinstance(clf, MultiPhenotypeIsolatedClassifier):
                 clf = list(map(lambda m: m.model, clf.classifiers))
+
             clfs.extend(clf)
 
         self.models = clfs
@@ -265,6 +269,55 @@ class GeneRanker(FeatureScorer):
             fig.show()
         except:
             logger.warning("Cannot plot histogram. plotly might not be installed.")
+
+
+class UnifiedFeatureScorer(PhenotypeFeatureScorer):
+    """
+    This feature scorer is used to combine (union)
+    all the features from given classifiers
+    """
+
+    def __init__(
+        self, *classifiers: Tuple[Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]]]
+    ):
+        # unravel all the classifiers if BulkTrainer
+        clfs = filter(
+            lambda clf: reduce(operator.concat, clf.classifiers)
+            if isinstance(clf, BulkTrainer)
+            else clf,
+            classifiers,
+        )
+        clfs = reduce(operator.concat, clfs)
+        super().__init__(clfs)
+
+    def get_features(
+        self,
+        top_k: int = 100,
+        columns: Optional[List[str]] = None,
+        **kwargs,
+    ) -> List[Tuple[str, float]]:
+        ignore_zeros = kwargs.get("ignore_zeros", True)
+        normalize = kwargs.get("normalize", True)
+        debug = kwargs.get("debug", False)
+        features = map(
+            lambda clf: PhenotypeFeatureScorer(clf).get_features(
+                top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
+            ),
+            self.models,
+        )
+        features = reduce(
+            operator.concat,
+            features,
+        )
+        if debug:
+            logger.debug(f"All features (n={len(features)}) => {features}")
+
+        features = sorted(features)
+        res = []
+        for key, group in itertools.groupby(features, operator.itemgetter(0)):
+            scores = tuple(map(lambda g: g[1], group))
+            res.append((key, sum(scores) / len(scores)))
+        return res
 
 
 def main():
