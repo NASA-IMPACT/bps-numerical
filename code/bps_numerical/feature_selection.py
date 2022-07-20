@@ -14,6 +14,10 @@ class FeatureSelector(ABC):
     """
     This component is used for selecting features
     after clustering.
+
+    Note:
+        `_select_features` abstractmethod should be implemented
+        by dowstream children.
     """
 
     def __init__(self, clusterer: CorrelationClusterer) -> None:
@@ -57,6 +61,9 @@ class FeatureSelector(ABC):
 
                 If this is provided, we try to use it directly to remove any
                 re-calculation
+
+        Returns:
+            List of selected gene feature string
         """
         cluster_map = self._get_cluster_map(df, cluster_map, **kwargs)
         if not isinstance(cluster_map, dict):
@@ -75,6 +82,23 @@ class FeatureSelector(ABC):
         cluster_map: Optional[Dict[int, List[str]]] = None,
         **kwargs,
     ) -> Dict[int, List[str]]:
+        """
+        This method sanity-checks the input dataframe / cluster_map cache.
+        If cluster_map is present, it will *not* compute the clusters and
+        return the same cluster map.
+
+        Args:
+            df: ```Optional[pd.DataFrame]````
+                Dataframe got after pre-processing gene/phenotype CSVs
+
+            cluster_map: ```Optional[Dict[int, List[str]]]```
+                A dictionary cache for the cluster.
+                It is normally the result from `bps_numerical.clustering.CorrelationClusterer`
+
+        Returns:
+            The cluster_map (same data structure as that of `cluster_map` input dict)
+
+        """
         if isinstance(cluster_map, dict) and len(cluster_map) > 0:
             return cluster_map
         if df is not None and isinstance(df, pd.DataFrame):
@@ -83,21 +107,37 @@ class FeatureSelector(ABC):
 
 
 class FirstFeatureSelector(FeatureSelector):
+    """
+    This selector selects only the "first" feature/gene from each cluster
+    """
+
     def _select_features(self, cluster_map: Dict[int, List[str]], **kwargs) -> List[str]:
         return list(map(lambda clusters: clusters[0], cluster_map.values()))
 
 
 class LastFeatureSelector(FeatureSelector):
+    """
+    This selector selects only the "last" feature/gene from each cluster
+    """
+
     def select_features(self, cluster_map: Dict[int, List[str]], **kwargs) -> List[str]:
         return list(map(lambda clusters: clusters[-1], cluster_map.values()))
 
 
 class RandomizedSingleFeatureSelector(FeatureSelector):
+    """
+    This selector selects only "one" random gene from each cluster
+    """
+
     def _select_features(self, cluster_map: Dict[int, List[str]], **kwargs) -> List[str]:
         return list(map(lambda clusters: random.choice(clusters), cluster_map.values()))
 
 
 class KRandomizedFeatureSelector(FeatureSelector):
+    """
+    This selector selects **k** random genes from each cluster
+    """
+
     def __init__(self, clusterer: CorrelationClusterer, k_features: int = 1) -> None:
         super().__init__(clusterer)
         self.k_features = k_features
