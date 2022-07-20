@@ -27,6 +27,9 @@ class FeatureScorer(ABC):
     Any downstream children should implement `get_features` method.
     """
 
+    def __init__(self, debug: bool = False) -> None:
+        self.debug = bool(debug)
+
     @abstractmethod
     def get_features(
         self,
@@ -125,11 +128,72 @@ class PhenotypeFeatureScorer(FeatureScorer):
     If the type is `MultiPhenotypeIsolatedClassifier`, then `MultiPhenotypeIsolatedClassifier.classifiers`
     is used to compute the feature, where we can access `model` attribute for eahc of
     those clasifiers.
+
+    Args:
+        `*classifiers`: Union[
+                BulkTrainer,
+                Type[BaseEstimator],
+                SinglePhenotypeClassifier,
+                MultiPhenotypeIsolatedClassifier
+            ]
+            Vardiac arguments for N number of `BulkTrainer` instances
+            to unravel
+
+        `debug`: `bool`
+            If enabled, some debug mode logs will be printed
     """
 
     def __init__(
-        self, *classifiers: Tuple[Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]]]
+        self,
+        *classifiers: Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]],
+        debug: bool = False,
     ):
+        super().__init__(debug=debug)
+        classifiers = self._unravel_bulk_trainer(*classifiers) + self._unravel_others(*classifiers)
+        self.models = self._unravel_others(*classifiers)
+
+    def _unravel_bulk_trainer(
+        self, *classifiers: Tuple[BulkTrainer]
+    ) -> Tuple[Type[AbstractPhenotypeClassifier]]:
+        """
+        This unravel/falttens all the classifiers within `classifiers.BulkTrainer`
+        into a tuple of sub-classifiers
+
+        Args:
+            `*classifiers`: `BulkTrainer`
+                Vardiac arguments for N number of `BulkTrainer` instances
+                to unravel
+        Returns:
+            `Tuple[Union[SinglePhenotypeClassifier, MultiPhenotypeIsolatedClassifier]]`
+            Note:
+                If the incoming classifier arguments doesn't exist, it will return
+                empty tuple
+        """
+        clfs = tuple(
+            filter(
+                lambda clf: isinstance(clf, BulkTrainer),
+                classifiers,
+            )
+        )
+        if not clfs:
+            return tuple()
+        clfs = map(lambda clf: reduce(operator.concat, clf.classifiers), clfs)
+        clfs = reduce(operator.concat, clfs)
+        return tuple(clfs)
+
+    def _unravel_others(
+        self, *classifiers: Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]]
+    ) -> tuple:
+        """
+        This unravel/falttens all the classifiers into a tuple of sub-classifiers
+
+        Args:
+            `*classifiers`: `Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]]`
+                Vardiac arguments for N number of classifier instances (not BulkTrainer)
+                to unravel
+        Returns:
+            `Tuple[Type[BaseEstimator]]`
+        """
         clfs = []
         for clf in classifiers:
             if isinstance(clf, BaseEstimator):
@@ -138,10 +202,10 @@ class PhenotypeFeatureScorer(FeatureScorer):
                 clf = [clf.model]
             elif isinstance(clf, MultiPhenotypeIsolatedClassifier):
                 clf = list(map(lambda m: m.model, clf.classifiers))
-
+            else:
+                continue
             clfs.extend(clf)
-
-        self.models = clfs
+        return tuple(clfs)
 
     def get_features(
         self,
@@ -211,21 +275,46 @@ class GeneRanker(FeatureScorer):
     """
     This is used for performing feature ranking/scoring for a single genotype
     by fitting in independent models and getting the common features.
+
+    Args:
+        `cols_genes`: `List[str]`
+            Input list of columns/genes to be considered
+
+        `phenotype`: `str`
+            Which phenotype to use?
+
+        `n_runs`: `int`
+            How many times to run the training separately?
+            (Each training run will be independent)
+
+        `debug`: `bool`
+            If enabled, some debug mode logs/diagrams will be rendered
     """
 
     def __init__(
         self, cols_genes: List[str], phenotype: str, n_runs: int = 3, debug: bool = False
     ) -> None:
 
+        super().__init__(debug=debug)
         self.classifiers = [
             SinglePhenotypeClassifier(cols_genes=cols_genes, phenotype=phenotype, debug=debug)
             for _ in range(n_runs)
         ]
         self.results = []
-        self.debug = debug
         self.phenotype = phenotype
 
-    def get_features(self, data: pd.DataFrame, test_size: float = 0.2, **kwargs) -> dict:
+    def get_features(
+        self, data: pd.DataFrame, test_size: float = 0.2, **kwargs
+    ) -> List[Tuple[str, float]]:
+        """
+        Get list of important features using all the training runs
+
+        Args:
+            `data`: `pd.DataFrame`
+                Input dataframe with genes and targets
+            `test_size`: `float`
+                How much portion of data is used for splitting to test?
+        """
         self.results = [clf.train(data, test_size) for clf in self.classifiers]
 
         ignore_zeros = kwargs.get("ignore_zeros", True)
@@ -273,22 +362,19 @@ class GeneRanker(FeatureScorer):
 
 class UnifiedFeatureScorer(PhenotypeFeatureScorer):
     """
-    This feature scorer is used to combine (union)
-    all the features from given classifiers
-    """
+    This feature scorer is used to combine (union) all the features
+    from given classifiers
 
-    def __init__(
-        self, *classifiers: Tuple[Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]]]
-    ):
-        # unravel all the classifiers if BulkTrainer
-        clfs = filter(
-            lambda clf: reduce(operator.concat, clf.classifiers)
-            if isinstance(clf, BulkTrainer)
-            else clf,
-            classifiers,
-        )
-        clfs = reduce(operator.concat, clfs)
-        super().__init__(clfs)
+    Args:
+        `*classifiers`: Union[
+                BulkTrainer,
+                Type[BaseEstimator],
+                SinglePhenotypeClassifier,
+                MultiPhenotypeIsolatedClassifier
+            ]
+            Vardiac arguments for N number of `BulkTrainer` instances
+            to unravel
+    """
 
     def get_features(
         self,
@@ -296,9 +382,12 @@ class UnifiedFeatureScorer(PhenotypeFeatureScorer):
         columns: Optional[List[str]] = None,
         **kwargs,
     ) -> List[Tuple[str, float]]:
+        if not self.models:
+            logger.warning("No models detected. Returning empty list!")
+            return []
+
         ignore_zeros = kwargs.get("ignore_zeros", True)
         normalize = kwargs.get("normalize", True)
-        debug = kwargs.get("debug", False)
         features = map(
             lambda clf: PhenotypeFeatureScorer(clf).get_features(
                 top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
@@ -309,11 +398,13 @@ class UnifiedFeatureScorer(PhenotypeFeatureScorer):
             operator.concat,
             features,
         )
-        if debug:
+        if self.debug:
             logger.debug(f"All features (n={len(features)}) => {features}")
 
-        features = sorted(features)
         res = []
+        # need to sort to perform itertools.groupby
+        # behaviour is just like `uniq` from Unix
+        features = sorted(features)
         for key, group in itertools.groupby(features, operator.itemgetter(0)):
             scores = tuple(map(lambda g: g[1], group))
             res.append((key, sum(scores) / len(scores)))
