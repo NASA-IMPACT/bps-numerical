@@ -52,7 +52,20 @@ class AbstractPhenotypeClassifier(ABC):
         **kwargs,
     ) -> Dict[str, float]:
         """
-        This method is used for fitting the incoming model
+        This is an internal method used for fitting the incoming model.
+
+        Args:
+            `model`: ```Type[BaseEstimator]```
+                sklearn model which needs to be fitted
+            `X_train`: ```np.ndarray```
+                Input samples used for training
+            `Y_train`: ```np.ndarray```
+                Target samples used for training
+            `X_test`: ```np.ndarray```
+                Input samples used for test
+            `Y_test`: ```np.ndarray```
+                Target samples used for test
+
         """
         start = time.time()
 
