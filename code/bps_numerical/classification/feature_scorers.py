@@ -149,6 +149,7 @@ class PhenotypeFeatureScorer(FeatureScorer):
         debug: bool = False,
     ):
         super().__init__(debug=debug)
+        self.classifiers = classifiers
         classifiers = self._unravel_bulk_trainer(*classifiers) + self._unravel_others(*classifiers)
         self.models = self._unravel_others(*classifiers)
 
@@ -374,25 +375,46 @@ class UnifiedFeatureScorer(PhenotypeFeatureScorer):
             ]
             Vardiac arguments for N number of `BulkTrainer` instances
             to unravel
+
+        `top_k`: `int`
+            How many top features to consider?
+
+        `at_model_level`: `bool`
+            If enabled, all the instances of `Type[AbstractPhenotypeClassifier]`
+            will be flattened to `Type[BaseEstimator]` (eg: XGBClassifier).
+            This gives a list of BaseEstimator for which feature importance
+            is computed independently and then combined. Else, we go with usual Classifier-level computation.
+
+            Note: This might give us
+            a larger feature set as we are performing union operation
+            across all the sklearn models.
     """
 
     def get_features(
         self,
         top_k: int = 100,
-        columns: Optional[List[str]] = None,
+        at_model_level: bool = False,
         **kwargs,
     ) -> List[Tuple[str, float]]:
-        if not self.models:
-            logger.warning("No models detected. Returning empty list!")
-            return []
 
         ignore_zeros = kwargs.get("ignore_zeros", True)
         normalize = kwargs.get("normalize", True)
+
+        # only unravel bulk trainer and then add other classifers without change
+        clfs = (
+            self.models
+            if at_model_level
+            else self._unravel_bulk_trainer(*self.classifiers)
+            + tuple(filter(lambda clf: not isinstance(clf, BulkTrainer), self.classifiers))
+        )
+        if not clfs:
+            logger.warning("No classifiers detected. Returning empty list!")
+            return []
         features = map(
             lambda clf: PhenotypeFeatureScorer(clf).get_features(
                 top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
             ),
-            self.models,
+            clfs,
         )
         features = reduce(
             operator.concat,
