@@ -331,8 +331,6 @@ class GeneRanker(FeatureScorer):
         )
 
     def _debug_plot_hist(self, **kwargs):
-        if not self.debug:
-            return
         ignore_zeros = kwargs.get("ignore_zeros", True)
         normalize = kwargs.get("normalize", True)
         top_k = kwargs.get("top_k", 500)
@@ -430,7 +428,7 @@ class UnifiedFeatureScorer(PhenotypeFeatureScorer):
         for key, group in itertools.groupby(features, operator.itemgetter(0)):
             scores = tuple(map(lambda g: g[1], group))
             res.append((key, sum(scores) / len(scores)))
-        return res
+        return sorted(res, key=lambda x: x[1], reverse=True)
 
 
 def main():
