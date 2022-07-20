@@ -1,3 +1,5 @@
+# flake8: noqa
+
 #!/usr/bin/env python3
 
 import itertools
@@ -66,12 +68,12 @@ def main():
     # trainer
     ## single phenotype
     # model = xgboost.XGBClassifier()
-    # clf = SinglePhenotypeClassifier(
-    #     cols_genes=cols_genes,
-    #     phenotype="condition",
-    #     #     model = model
-    # )
-    # tracker_single = clf.train(df_merged)
+    clf = SinglePhenotypeClassifier(
+        cols_genes=cols_genes,
+        phenotype="condition",
+        #     model = model
+    )
+    tracker_single = clf.train(df_merged)
 
     ## multiple phenotypes
     clf_condition = SinglePhenotypeClassifier(cols_genes, "condition")
