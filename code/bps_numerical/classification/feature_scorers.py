@@ -355,7 +355,7 @@ class GeneRanker(FeatureScorer):
             )
             fig.update_layout(yaxis=dict(tickfont=dict(size=kwargs.get("debug_font_size", 7))))
             fig.show()
-        except:
+        except ModuleNotFoundError:
             logger.warning("Cannot plot histogram. plotly might not be installed.")
 
 
