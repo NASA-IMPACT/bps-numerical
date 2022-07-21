@@ -3,7 +3,7 @@
 import itertools
 import random
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import pandas as pd
 
@@ -147,6 +147,52 @@ class KRandomizedFeatureSelector(FeatureSelector):
             lambda clusters: random.choices(clusters, k=self.k_features), cluster_map.values()
         )
         return list(set(itertools.chain(*res)))
+
+
+class RandomFeatureSelector(FeatureSelector):
+    """
+    Randomly select features.
+
+    Args:
+        `n_random`: `Union[int, float]`
+            If int, it represents total number of genes to get randomly.
+            If float, it represents fraction of genes to get randomly.
+    """
+
+    def __init__(self, n_random: Union[int, float] = 1.0) -> None:
+        if not isinstance(n_random, (int, float)):
+            raise TypeError(
+                f"Invalid type for n_random. Expected (float, int). Got {type(n_random)}"
+            )
+        self.n_random = n_random
+
+    def select_features(
+        self,
+        df: pd.DataFrame,
+        **kwargs,
+    ) -> List[str]:
+        """
+        This is the entrypoint method to do feature selection
+
+        Args:
+            df: ```Optional[pd.DataFrame]```
+                Pandas dataframe (df) with only genes features
+
+                If `cluster_map` is not provided, this dataframe
+                is used to recompute all the clusters and then do the selection.
+
+
+        Returns:
+            List of selected gene feature string
+        """
+        columns = list(df.columns).copy()
+        n_samples = (
+            int(self.n_random * len(columns)) if isinstance(self.n_random, float) else self.n_random
+        )
+        return random.sample(columns, k=n_samples)
+
+    def _select_features(self) -> None:
+        raise NotImplementedError("This method is not required in RandomFeatureSelector")
 
 
 def main():
