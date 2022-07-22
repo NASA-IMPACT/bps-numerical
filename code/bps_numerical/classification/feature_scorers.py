@@ -176,10 +176,8 @@ class PhenotypeFeatureScorer(FeatureScorer):
                 classifiers,
             )
         )
-        if not clfs:
-            return tuple()
-        clfs = map(lambda clf: reduce(operator.concat, clf.classifiers), clfs)
-        clfs = reduce(operator.concat, clfs)
+        clfs = tuple(map(lambda clf: reduce(operator.concat, clf.classifiers), clfs))
+        clfs = reduce(operator.concat, clfs) if clfs else clfs
         return tuple(clfs)
 
     def _unravel_others(

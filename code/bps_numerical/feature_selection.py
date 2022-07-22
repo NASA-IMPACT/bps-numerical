@@ -185,7 +185,7 @@ class RandomFeatureSelector(FeatureSelector):
         Returns:
             List of selected gene feature string
         """
-        columns = list(df.columns).copy()
+        columns = list(df.columns)
         n_samples = (
             int(self.n_random * len(columns)) if isinstance(self.n_random, float) else self.n_random
         )
