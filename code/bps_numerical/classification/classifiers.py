@@ -14,6 +14,8 @@ from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
+from ..misc.datatools import train_test_indexed_split
+
 
 class AbstractPhenotypeClassifier(ABC):
     """
@@ -132,7 +134,7 @@ class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
         self.phenotype = phenotype
         self.model = model or xgboost.XGBClassifier()
 
-    def train(self, data: pd.DataFrame, test_size: float = 0.2) -> Dict[str, Any]:
+    def train(self, data: pd.DataFrame, test_size: float = 0.2, **kwargs) -> Dict[str, Any]:
         """
         This method is used for performing overall training using the
         incoming pre-processed dataframe.
@@ -174,13 +176,16 @@ class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
             logger.debug(f"Target phenotype stats:: {target_counts}")
             logger.debug(f"n genes = {len(self.cols_genes)} || Labels -> {labels}")
 
-        X_train, X_test, Y_train, Y_test = train_test_split(
+        splitted_data = train_test_indexed_split(
             data[self.cols_genes],
             data[labels],
             test_size=test_size,
+            shuffle=kwargs.get("shuffle", True),
         )
+        X_train, X_test, Y_train, Y_test = splitted_data.pop("data")
         tracker = self.fit(self.model, X_train, Y_train, X_test, Y_test, labels=labels)
         tracker["labels"] = labels
+        tracker["indices"] = splitted_data.pop("indices")
         return tracker
 
 
@@ -211,7 +216,7 @@ class MultiPhenotypeIsolatedClassifier(AbstractPhenotypeClassifier):
         self.classifiers = classifiers
         self.debug = debug
 
-    def train(self, data: pd.DataFrame, test_size: float = 0.2):
+    def train(self, data: pd.DataFrame, test_size: float = 0.2, **kwargs):
         """
         This method is used for performing overall training using the
         incoming pre-processed dataframe.
@@ -325,11 +330,15 @@ class MultiPhenotypeIsolatedClassifier(AbstractPhenotypeClassifier):
         data_x = data[self.cols_genes]
         data_y_full = data[target_columns_full]
 
-        X_train, X_test, Y_train_full, Y_test_full = train_test_split(
-            data_x, data_y_full, test_size=test_size
+        splitted_data = train_test_indexed_split(
+            data_x,
+            data_y_full,
+            test_size=test_size,
+            shuffle=kwargs.get("shuffle", True),
         )
+        X_train, X_test, Y_train_full, Y_test_full = splitted_data.pop("data")
 
-        tracker = {}
+        tracker = dict(indices=splitted_data.pop("indices"))
         for clf in tqdm(self.classifiers):
             logger.info(f"Training for phenotype={clf.phenotype}")
             tracker[clf.phenotype] = {}
