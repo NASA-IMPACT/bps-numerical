@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 
+import itertools
+import operator
 from abc import ABC, abstractmethod
-from functools import partial
+from functools import partial, reduce
+from pprint import pprint
 from typing import List, Optional, Tuple, Type, Union
 
 import numpy as np
+import pandas as pd
+from loguru import logger
 from sklearn.base import BaseEstimator
 
 from ..misc.maths import min_max_normalization
 from .classifiers import (
     AbstractPhenotypeClassifier,
+    BulkTrainer,
     MultiPhenotypeIsolatedClassifier,
     SinglePhenotypeClassifier,
 )
@@ -20,6 +26,9 @@ class FeatureScorer(ABC):
     This represents a type of FeatureScorer.
     Any downstream children should implement `get_features` method.
     """
+
+    def __init__(self, debug: bool = False) -> None:
+        self.debug = bool(debug)
 
     @abstractmethod
     def get_features(
@@ -119,11 +128,71 @@ class PhenotypeFeatureScorer(FeatureScorer):
     If the type is `MultiPhenotypeIsolatedClassifier`, then `MultiPhenotypeIsolatedClassifier.classifiers`
     is used to compute the feature, where we can access `model` attribute for eahc of
     those clasifiers.
+
+    Args:
+        `*classifiers`: Union[
+                BulkTrainer,
+                Type[BaseEstimator],
+                SinglePhenotypeClassifier,
+                MultiPhenotypeIsolatedClassifier
+            ]
+            Vardiac arguments for N number of `BulkTrainer` instances
+            to unravel
+
+        `debug`: `bool`
+            If enabled, some debug mode logs will be printed
     """
 
     def __init__(
-        self, *classifiers: Tuple[Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]]]
+        self,
+        *classifiers: Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]],
+        debug: bool = False,
     ):
+        super().__init__(debug=debug)
+        self.classifiers = classifiers
+        classifiers = self._unravel_bulk_trainer(*classifiers) + self._unravel_others(*classifiers)
+        self.models = self._unravel_others(*classifiers)
+
+    def _unravel_bulk_trainer(
+        self, *classifiers: Tuple[BulkTrainer]
+    ) -> Tuple[Type[AbstractPhenotypeClassifier]]:
+        """
+        This unravel/falttens all the classifiers within `classifiers.BulkTrainer`
+        into a tuple of sub-classifiers
+
+        Args:
+            `*classifiers`: `BulkTrainer`
+                Vardiac arguments for N number of `BulkTrainer` instances
+                to unravel
+        Returns:
+            `Tuple[Union[SinglePhenotypeClassifier, MultiPhenotypeIsolatedClassifier]]`
+            Note:
+                If the incoming classifier arguments doesn't exist, it will return
+                empty tuple
+        """
+        clfs = tuple(
+            filter(
+                lambda clf: isinstance(clf, BulkTrainer),
+                classifiers,
+            )
+        )
+        clfs = tuple(map(lambda clf: reduce(operator.concat, clf.classifiers), clfs))
+        clfs = reduce(operator.concat, clfs) if clfs else clfs
+        return tuple(clfs)
+
+    def _unravel_others(
+        self, *classifiers: Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]]
+    ) -> tuple:
+        """
+        This unravel/falttens all the classifiers into a tuple of sub-classifiers
+
+        Args:
+            `*classifiers`: `Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]]`
+                Vardiac arguments for N number of classifier instances (not BulkTrainer)
+                to unravel
+        Returns:
+            `Tuple[Type[BaseEstimator]]`
+        """
         clfs = []
         for clf in classifiers:
             if isinstance(clf, BaseEstimator):
@@ -132,9 +201,10 @@ class PhenotypeFeatureScorer(FeatureScorer):
                 clf = [clf.model]
             elif isinstance(clf, MultiPhenotypeIsolatedClassifier):
                 clf = list(map(lambda m: m.model, clf.classifiers))
+            else:
+                continue
             clfs.extend(clf)
-
-        self.models = clfs
+        return tuple(clfs)
 
     def get_features(
         self,
@@ -198,6 +268,165 @@ class PhenotypeFeatureScorer(FeatureScorer):
 
         scoremap = {name: score / len(features_list) for name, score in scoremap.items()}
         return sorted(list(scoremap.items()), key=lambda x: x[1], reverse=True)
+
+
+class GeneRanker(FeatureScorer):
+    """
+    This is used for performing feature ranking/scoring for a single genotype
+    by fitting in independent models and getting the common features.
+
+    Args:
+        `cols_genes`: `List[str]`
+            Input list of columns/genes to be considered
+
+        `phenotype`: `str`
+            Which phenotype to use?
+
+        `n_runs`: `int`
+            How many times to run the training separately?
+            (Each training run will be independent)
+
+        `debug`: `bool`
+            If enabled, some debug mode logs/diagrams will be rendered
+    """
+
+    def __init__(
+        self, cols_genes: List[str], phenotype: str, n_runs: int = 3, debug: bool = False
+    ) -> None:
+
+        super().__init__(debug=debug)
+        self.classifiers = [
+            SinglePhenotypeClassifier(cols_genes=cols_genes, phenotype=phenotype, debug=debug)
+            for _ in range(n_runs)
+        ]
+        self.results = []
+        self.phenotype = phenotype
+
+    def get_features(
+        self, data: pd.DataFrame, test_size: float = 0.2, **kwargs
+    ) -> List[Tuple[str, float]]:
+        """
+        Get list of important features using all the training runs
+
+        Args:
+            `data`: `pd.DataFrame`
+                Input dataframe with genes and targets
+            `test_size`: `float`
+                How much portion of data is used for splitting to test?
+        """
+        self.results = [clf.train(data, test_size) for clf in self.classifiers]
+
+        ignore_zeros = kwargs.get("ignore_zeros", True)
+        normalize = kwargs.get("normalize", True)
+        top_k = kwargs.get("top_k", 500)
+
+        if self.debug:
+            pprint(self.results)
+            self._debug_plot_hist(**kwargs)
+
+        return PhenotypeFeatureScorer(*self.classifiers).get_features(
+            top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
+        )
+
+    def _debug_plot_hist(self, **kwargs):
+        ignore_zeros = kwargs.get("ignore_zeros", True)
+        normalize = kwargs.get("normalize", True)
+        top_k = kwargs.get("top_k", 500)
+        nfeatures = []
+        for clf in self.classifiers:
+            features = PhenotypeFeatureScorer(clf).get_features(
+                top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
+            )
+            nfeatures.append(len(features))
+            logger.debug(f"{clf.phenotype} | {len(features)}")
+
+        try:
+            import plotly.express as px
+
+            _df_counter = pd.DataFrame(enumerate(nfeatures), columns=["run", "n_feature"])
+            fig = px.bar(
+                _df_counter,
+                x="run",
+                y="n_feature",
+                title=f"run vs n_feature for {self.phenotype}",
+                text_auto=True,
+            )
+            fig.update_layout(yaxis=dict(tickfont=dict(size=kwargs.get("debug_font_size", 7))))
+            fig.show()
+        except ModuleNotFoundError:
+            logger.warning("Cannot plot histogram. plotly might not be installed.")
+
+
+class UnifiedFeatureScorer(PhenotypeFeatureScorer):
+    """
+    This feature scorer is used to combine (union) all the features
+    from given classifiers
+
+    Args:
+        `*classifiers`: Union[
+                BulkTrainer,
+                Type[BaseEstimator],
+                SinglePhenotypeClassifier,
+                MultiPhenotypeIsolatedClassifier
+            ]
+            Vardiac arguments for N number of `BulkTrainer` instances
+            to unravel
+
+        `top_k`: `int`
+            How many top features to consider?
+
+        `at_model_level`: `bool`
+            If enabled, all the instances of `Type[AbstractPhenotypeClassifier]`
+            will be flattened to `Type[BaseEstimator]` (eg: XGBClassifier).
+            This gives a list of BaseEstimator for which feature importance
+            is computed independently and then combined. Else, we go with usual Classifier-level computation.
+
+            Note: This might give us
+            a larger feature set as we are performing union operation
+            across all the sklearn models.
+    """
+
+    def get_features(
+        self,
+        top_k: int = 100,
+        at_model_level: bool = False,
+        **kwargs,
+    ) -> List[Tuple[str, float]]:
+
+        ignore_zeros = kwargs.get("ignore_zeros", True)
+        normalize = kwargs.get("normalize", True)
+
+        # only unravel bulk trainer and then add other classifers without change
+        clfs = (
+            self.models
+            if at_model_level
+            else self._unravel_bulk_trainer(*self.classifiers)
+            + tuple(filter(lambda clf: not isinstance(clf, BulkTrainer), self.classifiers))
+        )
+        if not clfs:
+            logger.warning("No classifiers detected. Returning empty list!")
+            return []
+        features = map(
+            lambda clf: PhenotypeFeatureScorer(clf).get_features(
+                top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
+            ),
+            clfs,
+        )
+        features = reduce(
+            operator.concat,
+            features,
+        )
+        if self.debug:
+            logger.debug(f"All features (n={len(features)}) => {features}")
+
+        res = []
+        # need to sort to perform itertools.groupby
+        # behaviour is just like `uniq` from Unix
+        features = sorted(features)
+        for key, group in itertools.groupby(features, operator.itemgetter(0)):
+            scores = tuple(map(lambda g: g[1], group))
+            res.append((key, sum(scores) / len(scores)))
+        return sorted(res, key=lambda x: x[1], reverse=True)
 
 
 def main():
