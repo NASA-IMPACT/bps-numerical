@@ -11,6 +11,7 @@ import scipy.cluster.hierarchy as sch
 from loguru import logger
 from scipy.spatial.distance import squareform
 from scipy.stats import spearmanr
+from sklearn.metrics import classification_report, confusion_matrix
 from tqdm import tqdm
 
 from .classification.classifiers import SinglePhenotypeClassifier
@@ -268,6 +269,8 @@ class SamplingBasedClusterAnalyzer:
         cluster_map = self._restructure_cluster_map(cluster_map)
 
         train_results = self.trainer.train(data_merged)
+        if self.debug:
+            logger.debug(f"Train results | {train_results}")
         eval_results = self.evaluate(
             data_merged,
             data_genes,
@@ -375,9 +378,25 @@ class SamplingBasedClusterAnalyzer:
             Y_test = Y_test[labels]
             test_score = self.trainer.model.score(X_test, Y_test)
             train_score = self.trainer.model.score(X_train, Y_train)
+
+            preds = self.trainer.model.predict(X_test)
             if self.debug:
                 logger.debug(f"train_score={train_score} | test_score={test_score}")
-            metrics_tracker.append(dict(test_score=test_score, train_score=train_score))
+            metrics_tracker.append(
+                dict(
+                    test_score=test_score,
+                    train_score=train_score,
+                    confusion_matrix=confusion_matrix(
+                        np.asarray(Y_test).argmax(axis=1), np.asarray(preds).argmax(axis=1)
+                    ),
+                    classification_report=classification_report(
+                        Y_test,
+                        preds,
+                        target_names=labels,
+                        output_dict=True,
+                    ),
+                )
+            )
         return metrics_tracker
 
     def _sample_columns_from_cluster(
