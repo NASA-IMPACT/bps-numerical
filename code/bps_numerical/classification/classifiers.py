@@ -170,7 +170,7 @@ class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
         data = data[self.cols_genes + [self.phenotype]]
         data = pd.get_dummies(data)
 
-        labels = list(set(data.columns) - set(self.cols_genes) - set([self.phenotype]))
+        labels = sorted(list(set(data.columns) - set(self.cols_genes) - set([self.phenotype])))
 
         if self.debug:
             logger.debug(f"Target phenotype stats:: {target_counts}")
