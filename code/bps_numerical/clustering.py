@@ -246,7 +246,7 @@ class SamplingBasedClusterAnalyzer:
         self.max_sampling = int(max_sampling)
         self.min_cluster_size = int(min_cluster_size)
 
-    def analyze(self, data_merged: pd.DataFrame, data_genes: pd.DataFrame, **kwargs) -> List[dict]:
+    def analyze(self, data_merged: pd.DataFrame, data_genes: pd.DataFrame, **kwargs) -> dict:
         """
         This is the entrypoint method to analyze the cluster.
         First, the model is trained with input data and then analyzed with
@@ -264,6 +264,16 @@ class SamplingBasedClusterAnalyzer:
                 Full original dataframe only for genes
                 Note:
                     - This is used to replace the gene values in the input data
+
+        Returns:
+            A dict with two keys:
+                - train_results (dict)
+                    - This consists of training results from the classifier
+                - eval_results( List[dict] )
+                    - This consists of evaluaton result from sampling
+
+            Note:
+                Pass this dict to `SamplingBasedClusterAnalyzer.analyze_results`.
         """
         cluster_map = self.clusterer.cluster(data_genes, **kwargs)
         cluster_map = self._restructure_cluster_map(cluster_map)
@@ -279,7 +289,67 @@ class SamplingBasedClusterAnalyzer:
             cluster_map,
             train_results["labels"],
         )
-        return eval_results
+        return dict(train_results=train_results, eval_results=eval_results)
+
+    @staticmethod
+    def analyze_results(
+        train_results: dict,
+        eval_results: List[Dict[str, float]],
+        debug: bool = True,
+        **kwargs,
+    ) -> Tuple[float, float]:
+        """
+        Method to analyze the final results
+
+        Args:
+
+            `train_results`: ```Dict[str, Any]````
+                The result after training the classifier
+                (returned from `SinglePhenotypeClassifier.train(...)`)
+
+            `eval_results`: ```List[Dict[str, float]]```
+                Part of result from `SamplingBasedClusterAnalyzer.analyze(...)`
+
+            `debug`: ```bool```
+                If enabled, scores are plotted.
+
+        Returns:
+            Tuple of 2 elements representing the average deviation from original
+            scores.
+
+        """
+        train_scores = np.array(list(map(lambda x: x["train_score"], eval_results)))
+        test_scores = np.array(list(map(lambda x: x["test_score"], eval_results)))
+        target_train_score = train_results["train_score"]
+        target_test_score = train_results["test_score"]
+
+        deviation_train_avg = np.mean(np.abs(train_scores - target_train_score))
+        deviation_test_avg = np.mean(np.abs(test_scores - target_test_score))
+
+        if debug:
+            logger.info(
+                f"Average Train Deviation = {deviation_train_avg} | Average Test Deviation = {deviation_test_avg}"
+            )
+            plt.figure(figsize=(kwargs.get("plot_width", 12), kwargs.get("plot_height", 5)))
+            plt.hlines(
+                y=target_train_score,
+                xmin=0,
+                xmax=len(eval_results),
+                color="red",
+                label=f"Original Train Score [{round(target_train_score, 3)}]",
+            )
+            plt.hlines(
+                y=target_test_score,
+                xmin=0,
+                xmax=len(eval_results),
+                color="green",
+                label=f"Original Test Score [{round(target_test_score, 3)}]",
+            )
+            plt.plot(train_scores, color="blue", label="New Train Score")
+            plt.plot(test_scores, color="orange", label="New Train Score")
+            plt.legend()
+
+        return deviation_train_avg, deviation_test_avg
 
     def evaluate(
         self,
@@ -361,6 +431,8 @@ class SamplingBasedClusterAnalyzer:
         # So, we replace with different genes iteratively
         metrics_tracker = []
         for replacers in tqdm(zip(*genes_to_replace.values())):
+            # we need to restart fresh for each replacement
+            # otherwise, possible side-effect of column substition
             data_to_use = data_merged.copy()
             data_to_use[source_genes] = data_genes[list(replacers)]
 
