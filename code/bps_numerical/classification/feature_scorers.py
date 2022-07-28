@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
+import shap
 from loguru import logger
 from sklearn.base import BaseEstimator
 
@@ -66,6 +67,7 @@ class FeatureScorer(ABC):
         top_k: int = 25,
         ignore_zeros: bool = False,
         normalize: bool = False,
+        columns: Optional[List[str]] = None,
     ) -> List[Tuple[str, float]]:
         """
         Get top-k important features in descending order
@@ -84,6 +86,9 @@ class FeatureScorer(ABC):
                 If enabled, feature scores will be normalized in [0, 1] range
                 using min-max normalization.
                 (Highest feature will have 1.0 score)
+            `columns`: `List[str]`
+                If provided, should be list of input feature names.
+                Else, this list will be extracted from the input model.
         Returns:
             List[Tuple[str, float]] where each tuple is of:
                 - first element -> feature name
@@ -95,10 +100,8 @@ class FeatureScorer(ABC):
                         ('ENSMUSG00000020889', 1.0),
                         ('ENSMUSG00000115420', 0.25354915857315063)
                     ]
-
-
         """
-        cols = list(model.feature_names_in_)
+        cols = columns or list(model.feature_names_in_)
         importances = model.feature_importances_
         if normalize:
             importances = min_max_normalization(importances)
@@ -240,6 +243,190 @@ class PhenotypeFeatureScorer(FeatureScorer):
             )
         _get_top_k = partial(
             self.get_top_k_features, top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
+        )
+        features = list(map(lambda model: _get_top_k(model=model), self.models))
+        return self._get_common_features(*features)
+
+    def _get_common_features(
+        self, *features_list: List[List[Tuple[str, float]]]
+    ) -> List[Tuple[str, float]]:
+        """
+        Get common features across multiple feature list.
+
+        Score is computed as an average between all the common feature scores.
+        """
+        if len(features_list) == 1:
+            return features_list[0]
+
+        _mapify = lambda fts: dict(fts)  # noqa: E731
+
+        features_first = _mapify(features_list[0])
+        common = set(features_first.keys())
+        scoremap = features_first.copy()
+
+        for features in features_list[1:]:
+            fmap = _mapify(features)
+            common = common.intersection(fmap.keys())
+            scoremap = dict(map(lambda c: (c, (scoremap[c] + fmap[c])), common))
+
+        scoremap = {name: score / len(features_list) for name, score in scoremap.items()}
+        return sorted(list(scoremap.items()), key=lambda x: x[1], reverse=True)
+
+
+class ShapBasedPhenotypeFeatureScorer(PhenotypeFeatureScorer):
+    """
+    This FeatureScorer uses SHAPely values to get the top_k features
+
+    Args:
+        `*classifiers`: Union[
+                BulkTrainer,
+                Type[BaseEstimator],
+                SinglePhenotypeClassifier,
+                MultiPhenotypeIsolatedClassifier
+            ]
+            Vardiac arguments for N number of `BulkTrainer` instances
+            to unravel
+
+        `explainer`: ```Type[shap.explainer._explainer.Explainer]````
+            What type of explainer to use? Defaults to `TreeExplainer`
+
+        `debug`: `bool`
+            If enabled, some debug mode logs will be printed
+
+    Note:
+        Unlike xgboost-based feature scorer, this one needs input data
+        to figure out the interaction between input/output.
+        So, an extra parameter to `get_top_k_features` is `data: pd.DataFrame`
+    """
+
+    def __init__(
+        self,
+        *classifiers: Union[Type[AbstractPhenotypeClassifier], Type[BaseEstimator]],
+        explainer: Optional[Type[shap.explainers._explainer.Explainer]] = None,
+        debug: bool = False,
+    ):
+        super().__init__(*classifiers, debug=debug)
+        self.explainer = explainer or shap.TreeExplainer
+
+    @staticmethod
+    def get_top_k_features(
+        model: Type[BaseEstimator],
+        explainer: Type[shap.explainers._explainer.Explainer],
+        data,
+        top_k: int = 500,
+        normalize: bool = True,
+        ignore_zeros: bool = True,
+        columns: List[str] = None,
+    ):
+        """
+        Get top-k important features in descending order
+        (first element as the most important feature)
+
+        Args:
+            `model`: ```Type[BaseEstimator]```
+                Models derived from sklearn's BaseEstimator class
+                (eg: `xgboost.XGBClassifier`)
+            `explainer`: ```Type[shap.Explainer]```
+                Which shap explainer to use?
+            `data`: ```pd.DataFrame```
+                Input data (X) to generate shapely values
+            `top_k`: ```int```
+                Top k most important features to return
+            `ignore_zeros`: ```bool```
+                If enabled, all the features which has *zero* (0) scores
+                will be removed
+            `normalize`: ```bool```
+                If enabled, feature scores will be normalized in [0, 1] range
+                using min-max normalization.
+                (Highest feature will have 1.0 score)
+        Returns:
+            List[Tuple[str, float]] where each tuple is of:
+                - first element -> feature name
+                - second element -> feature score value
+
+            Eg:
+                .. code-block: python
+                    [
+                        ('ENSMUSG00000020889', 1.0),
+                        ('ENSMUSG00000115420', 0.25354915857315063)
+                    ]
+        """
+        cols = columns or list(model.feature_names_in_)
+        data = data[cols]
+        c_idxs = []
+        for column in cols:
+            c_idxs.append(
+                data.columns.get_loc(column)
+            )  # Get column locations for desired columns in given dataframe
+
+        shap_values = explainer(model).shap_values(data)
+        if isinstance(
+            shap_values, list
+        ):  # If shap values is a list of arrays (i.e., several classes)
+            means = [
+                np.abs(shap_values[class_][:, c_idxs]).mean(axis=0)
+                for class_ in range(len(shap_values))
+            ]  # Compute mean shap values per class
+            shap_means = np.sum(np.column_stack(means), 1)  # Sum of shap values over all classes
+        else:  # Else there is only one 2D array of shap values
+            assert len(shap_values.shape) == 2, 'Expected two-dimensional shap values array.'
+            shap_means = np.abs(shap_values).mean(axis=0)
+
+        if normalize:
+            shap_means = min_max_normalization(shap_means)
+        rankings = zip(cols, shap_means)
+        if ignore_zeros:
+            rankings = filter(lambda x: x[1] > 0, rankings)
+        return sorted(rankings, key=lambda x: x[1], reverse=True)[:top_k]
+
+    def get_features(
+        self,
+        data: pd.DataFrame,
+        top_k: int = 500,
+        columns: Optional[List[str]] = None,
+        **kwargs,
+    ) -> List[Tuple[str, float]]:
+        """
+        This is the entrypoint to compute feature importance
+        Args:
+            `data`: ```pd.DataFrame```
+                Input data (X) from which shapely values are to be generated
+                for each model.
+            `top_k`: ```int```
+                Top k most important features to return
+            `columns`: ```Optional[List[str]]```
+                List of input columns used for mapping the feature names
+
+        Returns:
+            List[Tuple[str, float]] where each tuple is of:
+                - first element -> feature name
+                - second element -> feature score value
+
+            Eg:
+                .. code-block: python
+                    [
+                        ('ENSMUSG00000020889', 1.0),
+                        ('ENSMUSG00000115420', 0.25354915857315063)
+                    ]
+        """
+        ignore_zeros = kwargs.get("ignore_zeros", True)
+        normalize = kwargs.get("normalize", True)
+        if len(self.models) == 1:
+            return self.get_top_k_features(
+                model=self.models[0],
+                explainer=self.explainer,
+                data=data,
+                top_k=top_k,
+                ignore_zeros=ignore_zeros,
+                normalize=normalize,
+            )
+        _get_top_k = partial(
+            self.get_top_k_features,
+            data=data,
+            explainer=self.explainer,
+            top_k=top_k,
+            ignore_zeros=ignore_zeros,
+            normalize=normalize,
         )
         features = list(map(lambda model: _get_top_k(model=model), self.models))
         return self._get_common_features(*features)
