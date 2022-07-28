@@ -2,7 +2,7 @@
 
 import itertools
 import random
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -37,7 +37,14 @@ def load_csv(
     return pd.read_csv(fname, header=0, skiprows=lambda i: i > 0 and random.random() > p)
 
 
-def train_test_indexed_split(*data: pd.DataFrame, test_size: float = 0.2, shuffle: bool = True):
+def train_test_indexed_split(
+    *data: pd.DataFrame, test_size: float = 0.2, shuffle: bool = True
+) -> dict:
+    """
+    This function is used to return:
+        - splitted data
+        - indices for the split
+    """
     assert len(data) > 0
     n_samples = data[0].shape[0]
 

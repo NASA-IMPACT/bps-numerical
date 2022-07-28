@@ -11,7 +11,6 @@ import xgboost
 from loguru import logger
 from sklearn.base import BaseEstimator
 from sklearn.metrics import classification_report, confusion_matrix
-from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 from ..misc.datatools import train_test_indexed_split
