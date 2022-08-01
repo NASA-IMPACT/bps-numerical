@@ -112,6 +112,32 @@ class FeatureScorer(ABC):
             features = filter(lambda f: f[1] > 0, features)
         return list(features)
 
+    @staticmethod
+    def _get_common_features(
+        *features_list: List[List[Tuple[str, float]]]
+    ) -> List[Tuple[str, float]]:
+        """
+        Get common features across multiple feature list.
+
+        Score is computed as an average between all the common feature scores.
+        """
+        if len(features_list) == 1:
+            return features_list[0]
+
+        _mapify = lambda fts: dict(fts)  # noqa: E731
+
+        features_first = _mapify(features_list[0])
+        common = set(features_first.keys())
+        scoremap = features_first.copy()
+
+        for features in features_list[1:]:
+            fmap = _mapify(features)
+            common = common.intersection(fmap.keys())
+            scoremap = dict(map(lambda c: (c, (scoremap[c] + fmap[c])), common))
+
+        scoremap = {name: score / len(features_list) for name, score in scoremap.items()}
+        return sorted(list(scoremap.items()), key=lambda x: x[1], reverse=True)
+
 
 class PhenotypeFeatureScorer(FeatureScorer):
     """
@@ -246,31 +272,6 @@ class PhenotypeFeatureScorer(FeatureScorer):
         )
         features = list(map(lambda model: _get_top_k(model=model), self.models))
         return self._get_common_features(*features)
-
-    def _get_common_features(
-        self, *features_list: List[List[Tuple[str, float]]]
-    ) -> List[Tuple[str, float]]:
-        """
-        Get common features across multiple feature list.
-
-        Score is computed as an average between all the common feature scores.
-        """
-        if len(features_list) == 1:
-            return features_list[0]
-
-        _mapify = lambda fts: dict(fts)  # noqa: E731
-
-        features_first = _mapify(features_list[0])
-        common = set(features_first.keys())
-        scoremap = features_first.copy()
-
-        for features in features_list[1:]:
-            fmap = _mapify(features)
-            common = common.intersection(fmap.keys())
-            scoremap = dict(map(lambda c: (c, (scoremap[c] + fmap[c])), common))
-
-        scoremap = {name: score / len(features_list) for name, score in scoremap.items()}
-        return sorted(list(scoremap.items()), key=lambda x: x[1], reverse=True)
 
 
 class ShapBasedPhenotypeFeatureScorer(PhenotypeFeatureScorer):
@@ -431,31 +432,6 @@ class ShapBasedPhenotypeFeatureScorer(PhenotypeFeatureScorer):
         features = list(map(lambda model: _get_top_k(model=model), self.models))
         return self._get_common_features(*features)
 
-    def _get_common_features(
-        self, *features_list: List[List[Tuple[str, float]]]
-    ) -> List[Tuple[str, float]]:
-        """
-        Get common features across multiple feature list.
-
-        Score is computed as an average between all the common feature scores.
-        """
-        if len(features_list) == 1:
-            return features_list[0]
-
-        _mapify = lambda fts: dict(fts)  # noqa: E731
-
-        features_first = _mapify(features_list[0])
-        common = set(features_first.keys())
-        scoremap = features_first.copy()
-
-        for features in features_list[1:]:
-            fmap = _mapify(features)
-            common = common.intersection(fmap.keys())
-            scoremap = dict(map(lambda c: (c, (scoremap[c] + fmap[c])), common))
-
-        scoremap = {name: score / len(features_list) for name, score in scoremap.items()}
-        return sorted(list(scoremap.items()), key=lambda x: x[1], reverse=True)
-
 
 class GeneRanker(FeatureScorer):
     """
@@ -490,7 +466,7 @@ class GeneRanker(FeatureScorer):
         self.phenotype = phenotype
 
     def get_features(
-        self, data: pd.DataFrame, test_size: float = 0.2, **kwargs
+        self, data: pd.DataFrame, test_size: float = 0.2, top_k: int = 500, **kwargs
     ) -> List[Tuple[str, float]]:
         """
         Get list of important features using all the training runs
@@ -505,7 +481,7 @@ class GeneRanker(FeatureScorer):
 
         ignore_zeros = kwargs.get("ignore_zeros", True)
         normalize = kwargs.get("normalize", True)
-        top_k = kwargs.get("top_k", 500)
+        top_k = int(top_k)
 
         if self.debug:
             pprint(self.results)
