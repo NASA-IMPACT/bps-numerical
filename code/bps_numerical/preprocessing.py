@@ -5,11 +5,14 @@ from typing import Union
 
 import pandas as pd
 from loguru import logger
+from sklearn import preprocessing
 
 from .misc.datatools import load_csv
 
 
-def standardize_gene_data(fname: Union[str, pd.DataFrame]) -> pd.DataFrame:
+def standardize_gene_data(
+    fname: Union[str, pd.DataFrame], standardize: bool = False
+) -> pd.DataFrame:
     """
     This applies:
         - transposes the original csv matrix so that each row becomes a list of
@@ -34,10 +37,22 @@ def standardize_gene_data(fname: Union[str, pd.DataFrame]) -> pd.DataFrame:
     df.rename(columns=df.iloc[0], inplace=True)
     df.drop(df.index[0], inplace=True)
 
-    # for speed, linear search
+    samples = []
+    # for speed, linear search in a slice
     if "gene" in df.columns[:100]:
         df.rename(columns={"gene": "Sample"}, inplace=True)
-    return df
+        samples = list(df.pop("Sample"))
+        df.reset_index(drop=True, inplace=True)
+
+    df = (
+        pd.DataFrame(
+            preprocessing.StandardScaler().fit_transform(df.to_numpy()), columns=df.columns
+        )
+        if standardize
+        else df
+    ).astype(float)
+    df.insert(0, "Sample", samples, True)
+    return df.reset_index(drop=True)
 
 
 def merge_gene_phenotype(
