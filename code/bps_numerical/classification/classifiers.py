@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import copy
+import os
+import pickle
+import tempfile
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -97,6 +103,53 @@ class AbstractPhenotypeClassifier(ABC):
             output_dict=True,
         )
         return metrics
+
+    def load(self, fname: Union[str, Path]) -> Type[AbstractPhenotypeClassifier]:
+        """
+        Load the classifier object
+
+        Args:
+            `fname`: ```Union[str, Path]```
+                Path to the file to load
+
+        Returns:
+            The classifier object
+
+        """
+        with open(fname, "rb") as fp:
+            return pickle.load(fp)
+
+    def save(
+        self, fname: Union[str, Path] = "tmp/classifier.clf"
+    ) -> Type[AbstractPhenotypeClassifier]:
+        """
+        Save the classifier to a binary file using pickle
+
+        Args:
+            `fname`: ```Union[str, Path]```
+                Where to save the file?
+                    - If directory, a random unique filename is added
+                        in the format:
+                            <classname>__<len(cols_genes)>__<random_string>
+                    - If file, that name is used
+
+        Returns:
+            The class object itself.
+
+        """
+        path = Path(fname)
+        path.mkdir(parents=True, exist_ok=True)
+        if path.is_dir():
+            tmp_name = next(tempfile._get_candidate_names())
+            path = path.joinpath(f"{self.__classname__}__{len(self.cols_genes)}__{tmp_name}.clf")
+        logger.info(f"Saving classifier to {path}")
+        with open(path, "wb") as fp:
+            pickle.dump(self, fp)
+        return self
+
+    @property
+    def __classname__(self) -> str:
+        return self.__class__.__name__
 
 
 class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
