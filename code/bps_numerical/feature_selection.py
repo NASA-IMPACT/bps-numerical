@@ -5,6 +5,7 @@ import random
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Union
 
+import numpy as np
 import pandas as pd
 
 from .clustering import CorrelationClusterer
@@ -20,7 +21,7 @@ class FeatureSelector(ABC):
         by dowstream children.
     """
 
-    def __init__(self, clusterer: CorrelationClusterer) -> None:
+    def __init__(self, clusterer: CorrelationClusterer, debug: bool = False) -> None:
         """
         Args:
             clusterer: ```CorrelationClusterer```
@@ -30,6 +31,7 @@ class FeatureSelector(ABC):
                 is used to compute the cluster
         """
         self.clusterer = clusterer
+        self.debug = bool(debug)
 
     def __call__(
         self,
@@ -193,6 +195,47 @@ class RandomFeatureSelector(FeatureSelector):
 
     def _select_features(self) -> None:
         raise NotImplementedError("This method is not required in RandomFeatureSelector")
+
+
+class BestCandidateFeatureSelector(FeatureSelector):
+    """
+    This selector tries to get the single best candidates from each cluster.
+    The best candidate is tentatively that point for which the distance
+    to all the other points in the cluster is minimum.
+    """
+
+    def _select_features(self, cluster_map: Dict[int, List[str]], **kwargs) -> List[str]:
+        assert (
+            self.clusterer.dist_matrix is not None
+        ), "CorrelationClusterer.dist_matrix should be NxN matrix"
+        cols = self.clusterer.column_names
+        gene_index_map = {cols: idx for idx, cols in enumerate(cols)}
+        res = []
+        for idx, cluster in cluster_map.items():
+            indices = list(map(lambda c: gene_index_map[c], cluster))
+            candidate = self._get_best_candidate(indices, self.clusterer.dist_matrix)
+            res.append(cols[candidate])
+        return res
+
+    def _get_best_candidate(self, indices: List[int], dist_matrix: np.ndarray):
+        """
+        Find best candidate based on distance matrix.
+
+        Args:
+            `indices`: ```List[int]```
+                List of feature index for which best candidate is to be computed
+
+            `dist_matrix`: ```np.ndarray```
+                This is actually the `1-abs(corr)` matrix.
+                (Two points have distance of 0 if highly correlated.)
+
+        Returns:
+            Column index of the candidate
+
+
+        """
+        dists = dist_matrix[indices][:, indices]
+        return indices[np.argmin(dists.sum(axis=1))]
 
 
 def main():

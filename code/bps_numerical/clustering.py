@@ -2,7 +2,7 @@
 
 import random
 import time
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,6 +32,7 @@ class CorrelationClusterer:
         cutoff_threshold: float = 0.75,
         debug: bool = False,
         correlation_type: str = "pearson",
+        dist_matrix: Optional[np.ndarray] = None,
     ):
         self.column_names = column_names
         self.cutoff_threshold = cutoff_threshold
@@ -39,6 +40,7 @@ class CorrelationClusterer:
         self.cluster_map = {}
         self.debug = debug
         self.correlation_type = correlation_type
+        self.dist_matrix = dist_matrix
 
     @staticmethod
     def compute_pearson_correlation(df: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
@@ -114,8 +116,8 @@ class CorrelationClusterer:
             to the gene columns.
         """
         logger.info("Clustering in progress...")
-        dists = 1 - np.round(abs(arr), 3)
-        hierarchy = sch.linkage(squareform(dists), method='average')
+        self.dist_matrix = self.dist_matrix or 1 - np.round(abs(arr), 3)
+        hierarchy = sch.linkage(squareform(self.dist_matrix), method='average')
         labels = sch.fcluster(hierarchy, cutoff_threshold, criterion='distance')
 
         if self.debug:

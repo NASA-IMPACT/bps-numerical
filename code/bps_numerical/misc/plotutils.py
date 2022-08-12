@@ -31,5 +31,8 @@ def plot_feature_scores(feature_scores: List[Tuple[str, int]], title=None, **kwa
         text_auto=True,
         orientation="h",
     )
-    fig.update_layout(yaxis=dict(tickfont=dict(size=kwargs.get("font_size", 7))))
+    fig.update_layout(
+        yaxis=dict(tickfont=dict(size=kwargs.get("font_size", 7))),
+        title_font_size=kwargs.get("title_font_size", 10),
+    )
     fig.show()
