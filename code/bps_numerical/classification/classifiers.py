@@ -104,7 +104,8 @@ class AbstractPhenotypeClassifier(ABC):
         )
         return metrics
 
-    def load(self, fname: Union[str, Path]) -> Type[AbstractPhenotypeClassifier]:
+    @classmethod
+    def load(cls, fname: Union[str, Path]) -> Type[AbstractPhenotypeClassifier]:
         """
         Load the classifier object
 
