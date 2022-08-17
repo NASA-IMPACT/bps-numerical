@@ -139,8 +139,8 @@ class AbstractPhenotypeClassifier(ABC):
 
         """
         path = Path(fname)
-        path.mkdir(parents=True, exist_ok=True)
         if path.is_dir():
+            path.mkdir(parents=True, exist_ok=True)
             tmp_name = next(tempfile._get_candidate_names())
             path = path.joinpath(f"{self.__classname__}__{len(self.cols_genes)}__{tmp_name}.clf")
         logger.info(f"Saving classifier to {path}")
