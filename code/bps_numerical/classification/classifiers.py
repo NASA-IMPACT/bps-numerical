@@ -19,7 +19,7 @@ from sklearn.base import BaseEstimator
 from sklearn.metrics import classification_report, confusion_matrix
 from tqdm import tqdm
 
-from ..misc.datatools import train_test_indexed_split, LoadSaveMixin
+from ..misc.datatools import LoadSaveMixin, train_test_indexed_split
 
 
 class AbstractPhenotypeClassifier(LoadSaveMixin, ABC):
