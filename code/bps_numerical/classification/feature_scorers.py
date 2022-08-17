@@ -13,6 +13,7 @@ import shap
 from loguru import logger
 from sklearn.base import BaseEstimator
 
+from ..misc.datatools import LoadSaveMixin
 from ..misc.maths import min_max_normalization
 from .classifiers import (
     AbstractPhenotypeClassifier,
@@ -22,7 +23,7 @@ from .classifiers import (
 )
 
 
-class FeatureScorer(ABC):
+class FeatureScorer(LoadSaveMixin, ABC):
     """
     This represents a type of FeatureScorer.
     Any downstream children should implement `get_features` method.
@@ -464,6 +465,7 @@ class GeneRanker(FeatureScorer):
         ]
         self.results = []
         self.phenotype = phenotype
+        self.features_ = []
 
     def get_features(
         self, data: pd.DataFrame, test_size: float = 0.2, top_k: int = 500, **kwargs
@@ -477,6 +479,9 @@ class GeneRanker(FeatureScorer):
             `test_size`: `float`
                 How much portion of data is used for splitting to test?
         """
+        if self.features_:
+            return self.features_
+
         self.results = [clf.train(data, test_size) for clf in self.classifiers]
 
         ignore_zeros = kwargs.get("ignore_zeros", True)
@@ -487,9 +492,10 @@ class GeneRanker(FeatureScorer):
             pprint(self.results)
             self._debug_plot_hist(**kwargs)
 
-        return PhenotypeFeatureScorer(*self.classifiers).get_features(
+        self.features_ = PhenotypeFeatureScorer(*self.classifiers).get_features(
             top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
         )
+        return self.features_
 
     def _debug_plot_hist(self, **kwargs):
         ignore_zeros = kwargs.get("ignore_zeros", True)

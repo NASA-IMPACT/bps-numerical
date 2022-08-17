@@ -30,9 +30,12 @@ def plot_feature_scores(feature_scores: List[Tuple[str, int]], title=None, **kwa
         title=title or "Gene Feature Importances",
         text_auto=True,
         orientation="h",
+        height=kwargs.get("height"),
+        width=kwargs.get("width"),
     )
     fig.update_layout(
         yaxis=dict(tickfont=dict(size=kwargs.get("font_size", 7))),
         title_font_size=kwargs.get("title_font_size", 10),
     )
     fig.show()
+    return fig

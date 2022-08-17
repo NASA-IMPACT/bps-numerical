@@ -19,10 +19,10 @@ from sklearn.base import BaseEstimator
 from sklearn.metrics import classification_report, confusion_matrix
 from tqdm import tqdm
 
-from ..misc.datatools import train_test_indexed_split
+from ..misc.datatools import train_test_indexed_split, LoadSaveMixin
 
 
-class AbstractPhenotypeClassifier(ABC):
+class AbstractPhenotypeClassifier(LoadSaveMixin, ABC):
     """
     This represents the component type for training the ML models
     """
@@ -103,50 +103,6 @@ class AbstractPhenotypeClassifier(ABC):
             output_dict=True,
         )
         return metrics
-
-    @classmethod
-    def load(cls, fname: Union[str, Path]) -> Type[AbstractPhenotypeClassifier]:
-        """
-        Load the classifier object
-
-        Args:
-            `fname`: ```Union[str, Path]```
-                Path to the file to load
-
-        Returns:
-            The classifier object
-
-        """
-        with open(fname, "rb") as fp:
-            return pickle.load(fp)
-
-    def save(
-        self, fname: Union[str, Path] = "tmp/classifier.clf"
-    ) -> Type[AbstractPhenotypeClassifier]:
-        """
-        Save the classifier to a binary file using pickle
-
-        Args:
-            `fname`: ```Union[str, Path]```
-                Where to save the file?
-                    - If directory, a random unique filename is added
-                        in the format:
-                            <classname>__<len(cols_genes)>__<random_string>
-                    - If file, that name is used
-
-        Returns:
-            The class object itself.
-
-        """
-        path = Path(fname)
-        if path.is_dir():
-            path.mkdir(parents=True, exist_ok=True)
-            tmp_name = next(tempfile._get_candidate_names())
-            path = path.joinpath(f"{self.__classname__}__{len(self.cols_genes)}__{tmp_name}.clf")
-        logger.info(f"Saving classifier to {path}")
-        with open(path, "wb") as fp:
-            pickle.dump(self, fp)
-        return self
 
     @property
     def __classname__(self) -> str:
