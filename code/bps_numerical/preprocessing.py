@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 
 
-from typing import Union
+from typing import Optional, Type, Union
 
 import pandas as pd
 from loguru import logger
-from sklearn import preprocessing
+from sklearn.exceptions import NotFittedError
+from sklearn.preprocessing import StandardScaler
+from sklearn.utils.validation import check_is_fitted
 
 from .misc.datatools import load_csv
 
 
 def standardize_gene_data(
-    fname: Union[str, pd.DataFrame], standardize: bool = False
+    fname: Union[str, pd.DataFrame],
+    scaler: Optional[Type[StandardScaler]] = None,
 ) -> pd.DataFrame:
     """
     This applies:
@@ -24,13 +27,17 @@ def standardize_gene_data(
         fname: `str` or `pd.DataFrame`
             Input original gene csv or dataframe
 
+        `scaler`: ```sklearn.preprocessing.StandardScaler```
+            Input data scaling object. If provided, we first try to transform data
+            using this one. Else, it will fit and then transform on the input data.
+
     Returns:
         `pd.DataFrame`
     """
     logger.info("Standardizing gene data into proper format.")
     df = fname
-    if isinstance(fname, str):
-        df = pd.read_csv(fname, chunksize=10000, iterator=False)
+    if isinstance(df, str):
+        df = pd.read_csv(df, chunksize=10000, iterator=False)
         df = pd.concat(df, ignore_index=False)
 
     df = df.T.reset_index()
@@ -44,13 +51,16 @@ def standardize_gene_data(
         samples = list(df.pop("Sample"))
         df.reset_index(drop=True, inplace=True)
 
-    df = (
-        pd.DataFrame(
-            preprocessing.StandardScaler().fit_transform(df.to_numpy()), columns=df.columns
-        )
-        if standardize
-        else df
-    ).astype(float)
+    try:
+        df = (
+            pd.DataFrame(scaler.transform(df.to_numpy()), columns=df.columns) if scaler else df
+        ).astype(float)
+    except NotFittedError:
+        logger.warning("Fitting the incoming `scaler`.")
+        df = (
+            pd.DataFrame(scaler.fit_transform(df.to_numpy()), columns=df.columns) if scaler else df
+        ).astype(float)
+
     df.insert(0, "Sample", samples, True)
     return df.reset_index(drop=True)
 

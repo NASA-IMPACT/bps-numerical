@@ -9,9 +9,10 @@ import numpy as np
 import pandas as pd
 
 from .clustering import CorrelationClusterer
+from .misc.datatools import LoadSaveMixin
 
 
-class FeatureSelector(ABC):
+class FeatureSelector(LoadSaveMixin, ABC):
     """
     This component is used for selecting features
     after clustering.

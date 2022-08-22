@@ -511,7 +511,8 @@ class SamplingBasedClusterAnalyzer:
         n_samples = min(len(cluster), n_samples)
         return random.sample(cluster, k=(min(len(cluster), n_samples)))
 
-    def _restructure_cluster_map(self, cluster_map: Dict[int, List[str]]) -> Dict[str, Tuple[str]]:
+    @staticmethod
+    def _restructure_cluster_map(cluster_map: Dict[int, List[str]]) -> Dict[str, Tuple[str]]:
         """
         This restructures the input cluster_map dict in the format:
 
