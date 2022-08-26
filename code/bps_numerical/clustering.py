@@ -116,7 +116,9 @@ class CorrelationClusterer:
             to the gene columns.
         """
         logger.info("Clustering in progress...")
-        self.dist_matrix = self.dist_matrix or 1 - np.round(abs(arr), 3)
+        self.dist_matrix = (
+            self.dist_matrix if self.dist_matrix is not None else (1 - np.round(abs(arr), 3))
+        )
         hierarchy = sch.linkage(squareform(self.dist_matrix), method='average')
         labels = sch.fcluster(hierarchy, cutoff_threshold, criterion='distance')
 
