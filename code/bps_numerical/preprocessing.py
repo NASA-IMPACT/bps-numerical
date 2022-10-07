@@ -2,13 +2,12 @@
 
 
 from functools import cached_property
-from typing import Optional, Type, Union
+from typing import List, Optional, Type, Union
 
 import pandas as pd
 from loguru import logger
 from sklearn.exceptions import NotFittedError
 from sklearn.preprocessing import StandardScaler
-from sklearn.utils.validation import check_is_fitted
 
 from .misc.datatools import load_csv
 
@@ -108,10 +107,10 @@ class DataLoader:
 
     @property
     def phenotype_attrs_data(self) -> pd.DataFrame:
-        logger.info(f"Loading phenotype/attrs only data...")
+        logger.info("Loading phenotype/attrs only data...")
         df_attrs = self.df_attrs
         if df_attrs is None:
-            df_attrs = datatools.load_csv(self.csv_phenotype)
+            df_attrs = load_csv(self.csv_phenotype)
 
         self.df_attrs = df_attrs
         logger.info(f"Phenotype attrs data loaded | {df_attrs.shape}")
@@ -122,7 +121,7 @@ class DataLoader:
         cols_genes: Optional[List[str]] = None,
         on: str = "Sample",
     ) -> pd.DataFrame:
-        logger.info(f"Combing gene+phenotype data...")
+        logger.info("Combing gene+phenotype data...")
 
         # early cache check to speed up the returns
         if self.df_merged is not None and isinstance(self.df_merged, pd.DataFrame):
@@ -135,7 +134,7 @@ class DataLoader:
         )
 
         df_attrs = self.phenotype_attrs_data
-        assert self.df_attrs is not None, ValueError(
+        assert df_attrs is not None, ValueError(
             "Cannot load. Make sure phenotype attrs data is valid!"
         )
 
@@ -144,7 +143,7 @@ class DataLoader:
             logger.debug(f"Using {len(cols_genes)} genes!")
             self.df_merged = merge_gene_phenotype(
                 pd.concat([self.samples, self.df_genes[cols_genes]], axis=1),
-                self.df_attrs,
+                df_attrs,
                 on,
             )
         logger.info(f"Merged data | {self.df_merged.shape}")
@@ -159,7 +158,6 @@ class DataLoader:
         assert self.df_merged is not None, ValueError(
             "df_merged data is yet not formed. Are you sure you have done DataLoader.get_merged_data(...) first?"
         )
-        cols_merged = self.df_merged.columns.to_list()
         cols_attrs = set(self.df_attrs.columns)
 
         # done to maintain order
