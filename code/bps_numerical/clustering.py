@@ -2,7 +2,7 @@
 
 import random
 import time
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -541,6 +541,80 @@ class SamplingBasedClusterAnalyzer:
             for candidate in cluster:
                 resultant[candidate] = cluster
         return resultant
+
+
+class FeatureGrouper:
+    def __init__(
+        self, feature_names: Optional[List[str]] = None, threshold: float = 0.0, debug: bool = False
+    ) -> None:
+        self.feature_names = feature_names
+        self.threshold = threshold
+        self.debug = bool(debug)
+
+    def cluster(
+        self,
+        data: Union[pd.DataFrame, np.ndarray],
+        dist_matrix: Optional[np.ndarray] = None,
+        dist_func: Optional[Callable] = None,
+    ) -> List[Tuple[Union[int, str]]]:
+        """
+        This method groups the features based on threshold
+        applied to the distances.
+
+        Args:
+            ```data```: ```Union[pd.DataFrame, np.ndarray]```
+                Input data to be used to get:
+                    - feature names if not provided in the constructor
+                    - compute distance matrix if not provided
+
+            ```dist_matrix````: ```Optional[np.ndarray]```
+                If provided, this is a square matrix to represent
+                distance between all the feature vectors.
+                If this is None, we use `dist_func` function
+                to compute this matrix
+
+            ```dist_func```: ```Optional[Callable]```
+                This is the function to be used to compute the NxN
+                distance matrix given features
+
+        Ret:
+            List of tuple.
+            Each tuple is a group with feature names or indices.
+
+        Note:
+            If feature_names is not provided, we first try to infer it
+            from the pandas dataframe. Else we use generic integer indices
+            representing the column location.
+        """
+        feature_names = self.feature_names
+        if feature_names is None and isinstance(data, pd.DataFrame):
+            feature_names = data.columns.to_list()
+            data = data[feature_names]  # if pandas DF, filter the columns
+        elif feature_names is None and isinstance(data, np.ndarray):
+            feature_names = list(range(data.shape[1]))
+
+        if dist_matrix is None:
+            logger.info(f"dist_matrix is None. Using {dist_func} function")
+            dist_matrix = dist_func(data)
+        # no group will be formed
+        if self.threshold == 1.0:
+            return []
+        # everything lies in single group
+        elif self.threshold == 0.0:
+            return [tuple(feature_names.copy())]
+
+        res = []
+        opened = set(range(len(feature_names)))
+        while len(opened) > 0:
+            # get 1 feature and compute for its group
+            f_idx = tuple(opened)[0]
+            _dists = dist_matrix[f_idx]
+
+            # for f_idx, find its group
+            indices = np.argwhere(_dists > self.threshold).flatten()
+            res.append(tuple(indices))
+            opened = opened - set(indices)
+        return list(map(lambda grp: tuple([feature_names[idx] for idx in grp]), res))
 
 
 def main():
