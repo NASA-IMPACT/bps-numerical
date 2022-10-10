@@ -1,4 +1,4 @@
-import itertools
+from functools import reduce
 
 import numpy as np
 
@@ -21,6 +21,6 @@ def chain(*funcs):
     """
 
     def chained_call(arg):
-        return itertools.reduce(lambda r, f: f(r), funcs, arg)
+        return reduce(lambda r, f: f(r), funcs, arg)
 
     return chained_call

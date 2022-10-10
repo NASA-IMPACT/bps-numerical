@@ -545,18 +545,23 @@ class SamplingBasedClusterAnalyzer:
 
 class FeatureGrouper:
     def __init__(
-        self, feature_names: Optional[List[str]] = None, threshold: float = 0.0, debug: bool = False
+        self,
+        feature_names: Optional[List[str]] = None,
+        threshold: float = 0.0,
+        dist_func: Optional[Callable] = None,
+        debug: bool = False,
     ) -> None:
         self.feature_names = feature_names
         self.threshold = threshold
+        self.dist_func = dist_func
         self.debug = bool(debug)
+        self.dist_matrix = None
 
     def cluster(
         self,
         data: Union[pd.DataFrame, np.ndarray],
         dist_matrix: Optional[np.ndarray] = None,
-        dist_func: Optional[Callable] = None,
-    ) -> List[Tuple[Union[int, str]]]:
+    ) -> Dict[int, List[str]]:
         """
         This method groups the features based on threshold
         applied to the distances.
@@ -593,9 +598,10 @@ class FeatureGrouper:
         elif feature_names is None and isinstance(data, np.ndarray):
             feature_names = list(range(data.shape[1]))
 
+        dist_matrix = self.dist_matrix if dist_matrix is None else dist_matrix
         if dist_matrix is None:
-            logger.info(f"dist_matrix is None. Using {dist_func} function")
-            dist_matrix = dist_func(data)
+            logger.info(f"dist_matrix is None. Using {self.dist_func} function")
+            dist_matrix = self.dist_func(data)
         # no group will be formed
         if self.threshold == 1.0:
             return []
@@ -604,17 +610,33 @@ class FeatureGrouper:
             return [tuple(feature_names.copy())]
 
         res = []
-        opened = set(range(len(feature_names)))
-        while len(opened) > 0:
+        open_features = set(range(len(feature_names)))
+        closed_features = set()
+        while len(open_features) > 0:
             # get 1 feature and compute for its group
-            f_idx = tuple(opened)[0]
+            f_idx = tuple(open_features)[0]
             _dists = dist_matrix[f_idx]
 
             # for f_idx, find its group
             indices = np.argwhere(_dists > self.threshold).flatten()
+
+            # remove indices that are already in a group
+            indices = set(map(int, indices)) - closed_features
+
             res.append(tuple(indices))
-            opened = opened - set(indices)
-        return list(map(lambda grp: tuple([feature_names[idx] for idx in grp]), res))
+            closed_features.update(indices)
+            open_features = open_features - indices
+
+        # cache the dist_matrix for downstream tasks!
+        self.dist_matrix = dist_matrix
+
+        return dict(
+            map(lambda grp: (grp[0], [feature_names[idx] for idx in grp[1]]), enumerate(res))
+        )
+
+    @property
+    def column_names(self) -> List[str]:
+        return self.feature_names
 
 
 def main():
