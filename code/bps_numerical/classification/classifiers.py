@@ -138,10 +138,11 @@ class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
         phenotype: str,
         model: Optional[Type[BaseEstimator]] = None,
         debug: bool = False,
+        **xgboost_params,
     ) -> None:
         super().__init__(cols_genes, debug)
         self.phenotype = phenotype
-        self.model = model or xgboost.XGBClassifier()
+        self.model = model or xgboost.XGBClassifier(**xgboost_params)
 
     def train(self, data: pd.DataFrame, test_size: float = 0.2, **kwargs) -> Dict[str, Any]:
         """

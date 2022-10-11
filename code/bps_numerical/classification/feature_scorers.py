@@ -455,12 +455,19 @@ class GeneRanker(FeatureScorer):
     """
 
     def __init__(
-        self, cols_genes: List[str], phenotype: str, n_runs: int = 3, debug: bool = False
+        self,
+        cols_genes: List[str],
+        phenotype: str,
+        n_runs: int = 3,
+        debug: bool = False,
+        **xgboost_params,
     ) -> None:
 
         super().__init__(debug=debug)
         self.classifiers = [
-            SinglePhenotypeClassifier(cols_genes=cols_genes, phenotype=phenotype, debug=debug)
+            SinglePhenotypeClassifier(
+                cols_genes=cols_genes, phenotype=phenotype, debug=debug, **xgboost_params
+            )
             for _ in range(n_runs)
         ]
         self.results = []
