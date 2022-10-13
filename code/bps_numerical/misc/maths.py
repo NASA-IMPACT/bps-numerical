@@ -1,4 +1,6 @@
+from copy import deepcopy
 from functools import reduce
+from typing import Sequence
 
 import numpy as np
 
@@ -24,3 +26,13 @@ def chain(*funcs):
         return reduce(lambda r, f: f(r), funcs, arg)
 
     return chained_call
+
+
+def shuffle_copy(vals: Sequence) -> Sequence:
+    """
+    This shuffles the incoming sequence (list/tuple)
+    without changing inplace by doing deepcopy and shuffling.
+    """
+    vals = deepcopy(vals)
+    np.random.shuffle(vals)
+    return vals

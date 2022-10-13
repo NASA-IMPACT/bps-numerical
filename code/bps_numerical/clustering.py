@@ -33,6 +33,7 @@ class CorrelationClusterer:
         debug: bool = False,
         correlation_type: str = "pearson",
         dist_matrix: Optional[np.ndarray] = None,
+        linkage_type: str = "average",
     ):
         self.column_names = column_names
         self.cutoff_threshold = cutoff_threshold
@@ -41,6 +42,7 @@ class CorrelationClusterer:
         self.debug = debug
         self.correlation_type = correlation_type
         self.dist_matrix = dist_matrix
+        self.linkage_type = linkage_type
 
     @staticmethod
     def compute_pearson_correlation(df: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
@@ -119,7 +121,7 @@ class CorrelationClusterer:
         self.dist_matrix = (
             self.dist_matrix if self.dist_matrix is not None else (1 - np.round(abs(arr), 3))
         )
-        hierarchy = sch.linkage(squareform(self.dist_matrix), method='average')
+        hierarchy = sch.linkage(squareform(self.dist_matrix), method=self.linkage_type)
         labels = sch.fcluster(hierarchy, cutoff_threshold, criterion='distance')
 
         if self.debug:

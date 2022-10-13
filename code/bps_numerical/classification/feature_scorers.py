@@ -14,7 +14,7 @@ from loguru import logger
 from sklearn.base import BaseEstimator
 
 from ..misc.datatools import LoadSaveMixin
-from ..misc.maths import min_max_normalization
+from ..misc.maths import min_max_normalization, shuffle_copy
 from .classifiers import (
     AbstractPhenotypeClassifier,
     BulkTrainer,
@@ -460,15 +460,28 @@ class GeneRanker(FeatureScorer):
         phenotype: str,
         n_runs: int = 3,
         debug: bool = False,
+        shuffle_columns: bool = False,
         **xgboost_params,
     ) -> None:
 
         super().__init__(debug=debug)
+        # first run is original order
+        # later runs are shuffled if enabled
         self.classifiers = [
             SinglePhenotypeClassifier(
-                cols_genes=cols_genes, phenotype=phenotype, debug=debug, **xgboost_params
+                cols_genes=cols_genes,
+                phenotype=phenotype,
+                debug=debug,
+                **xgboost_params,
             )
-            for _ in range(n_runs)
+        ] + [
+            SinglePhenotypeClassifier(
+                cols_genes=cols_genes if not shuffle_columns else shuffle_copy(cols_genes),
+                phenotype=phenotype,
+                debug=debug,
+                **xgboost_params,
+            )
+            for _ in range(n_runs - 1)
         ]
         self.results = []
         self.phenotype = phenotype
