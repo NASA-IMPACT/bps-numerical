@@ -517,13 +517,14 @@ class GeneRanker(FeatureScorer):
             return self.features_
 
         xgboost_params = self.xgboost_params
+
         # find params and rebuilt classifiers
         if self.params_finder:
             logger.info("Finding best params...")
             res = self.params_finder.search(data)
             xgboost_params = dict(self.params_finder.best_params)
             logger.debug(f"Best params = {xgboost_params}")
-            logger.debug(f"Best score at {self.params_finder.best_params}")
+            logger.debug(f"Best score at {self.params_finder.best_score}")
 
         self.classifiers = self.build_classifiers(**xgboost_params)
 
