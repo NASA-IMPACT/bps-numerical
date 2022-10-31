@@ -21,6 +21,7 @@ from .classifiers import (
     MultiPhenotypeIsolatedClassifier,
     SinglePhenotypeClassifier,
 )
+from .tuner import BayesTuner
 
 
 class FeatureScorer(LoadSaveMixin, ABC):
@@ -458,6 +459,7 @@ class GeneRanker(FeatureScorer):
         self,
         cols_genes: List[str],
         phenotype: str,
+        params_finder: Optional[BayesTuner] = None,
         n_runs: int = 3,
         debug: bool = False,
         shuffle_columns: bool = False,
@@ -465,27 +467,39 @@ class GeneRanker(FeatureScorer):
     ) -> None:
 
         super().__init__(debug=debug)
+        self.shuffle_columns = bool(shuffle_columns)
+        self.cols_genes = list(cols_genes)
+        self.phenotype = phenotype
+        self.n_runs = int(n_runs)
+
         # first run is original order
         # later runs are shuffled if enabled
-        self.classifiers = [
+        self.classifiers = []
+        self.results = []
+        self.phenotype = phenotype
+        self.features_ = []
+        self.params_finder = params_finder
+        self.xgboost_params = xgboost_params
+
+    def build_classifiers(self, **xgboost_params) -> List[SinglePhenotypeClassifier]:
+        return [
             SinglePhenotypeClassifier(
-                cols_genes=cols_genes,
-                phenotype=phenotype,
-                debug=debug,
+                cols_genes=self.cols_genes,
+                phenotype=self.phenotype,
+                debug=self.debug,
                 **xgboost_params,
             )
         ] + [
             SinglePhenotypeClassifier(
-                cols_genes=cols_genes if not shuffle_columns else shuffle_copy(cols_genes),
-                phenotype=phenotype,
-                debug=debug,
+                cols_genes=self.cols_genes
+                if not self.shuffle_columns
+                else shuffle_copy(self.cols_genes),
+                phenotype=self.phenotype,
+                debug=self.debug,
                 **xgboost_params,
             )
-            for _ in range(n_runs - 1)
+            for _ in range(self.n_runs - 1)
         ]
-        self.results = []
-        self.phenotype = phenotype
-        self.features_ = []
 
     def get_features(
         self, data: pd.DataFrame, test_size: float = 0.2, top_k: int = 500, **kwargs
@@ -501,6 +515,17 @@ class GeneRanker(FeatureScorer):
         """
         if self.features_:
             return self.features_
+
+        xgboost_params = self.xgboost_params
+        # find params and rebuilt classifiers
+        if self.params_finder:
+            logger.info("Finding best params...")
+            res = self.params_finder.search(data)
+            xgboost_params = dict(self.params_finder.best_params)
+            logger.debug(f"Best params = {xgboost_params}")
+            logger.debug(f"Best score at {self.params_finder.best_params}")
+
+        self.classifiers = self.build_classifiers(**xgboost_params)
 
         self.results = [clf.train(data, test_size) for clf in self.classifiers]
 

@@ -55,6 +55,14 @@ class BayesTuner:
         self.result = self.tuner.fit(data[self.columns], target_encoded)
         return self.result
 
+    @property
+    def best_params(self) -> dict:
+        return self.tuner.best_params_
+
+    @property
+    def best_score(self) -> float:
+        return self.tuner.best_score_
+
 
 def main():
     pass
