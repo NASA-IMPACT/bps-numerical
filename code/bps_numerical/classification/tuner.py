@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 
-from typing import List
+from typing import List, Optional, Type
 
 import pandas as pd
 import xgboost
 from sklearn import preprocessing
 from sklearn.model_selection import StratifiedKFold
 from skopt import BayesSearchCV
+from skopt.callbacks import (
+    CheckpointSaver,
+    DeadlineStopper,
+    DeltaYStopper,
+    EarlyStopper,
+)
 from skopt.space import Integer, Real
 
 
 class BayesTuner:
+    # early stopping params (see _get_callbacks(...))
+    _ES_DELTA_Y = 1e-4  # the search doesn't progress by this delta, stop
+    _ES_DEADLINE = 60 * 60 * 2  # 2 hours before stopping the tuner
+
     def __init__(
         self,
         columns: List[str],
@@ -19,11 +29,15 @@ class BayesTuner:
         n_jobs: int = 4,
         objective: str = "multi:softmax",
         k_folds: int = 3,
+        callbacks: Optional[List[Type[EarlyStopper]]] = None,
         debug: bool = False,
     ) -> None:
         self.columns = list(columns)
         self.target_column = target_column
         self.debug = bool(debug)
+
+        self.callbacks = self._get_callbacks(callbacks)
+
         self.search_spaces = {
             'learning_rate': Real(0.01, 1.0, 'log-uniform'),
             'max_depth': Integer(0, 50),
@@ -50,9 +64,30 @@ class BayesTuner:
         )
         self.result = None
 
+    @property
+    def __default_callbacks(self) -> List[Type[EarlyStopper]]:
+        return [
+            DeltaYStopper(delta=self._ES_DELTA_Y),
+            DeadlineStopper(total_time=self._ES_DEADLINE),
+        ]
+
+    def _get_callbacks(self, callbacks: List[Type[EarlyStopper]]) -> List[Type[EarlyStopper]]:
+        # in case we don't want callbacks
+        if callbacks is None:
+            return []
+
+        # if provided callbacks is empty list, go with defaults
+        callbacks = callbacks or self.__default_callbacks
+        for callback in callbacks:
+            if not isinstance(callback, (EarlyStopper, CheckpointSaver)):
+                raise TypeError(
+                    f"Invalid type for callback={callback}. Expected Type[EarlyStopper]. Got {type(callback)}"
+                )
+        return callbacks
+
     def search(self, data: pd.DataFrame):
         target_encoded = preprocessing.LabelEncoder().fit_transform(data[self.target_column])
-        self.result = self.tuner.fit(data[self.columns], target_encoded)
+        self.result = self.tuner.fit(data[self.columns], target_encoded, callback=self.callbacks)
         return self.result
 
     @property
