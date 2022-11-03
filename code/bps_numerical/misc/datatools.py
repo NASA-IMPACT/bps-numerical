@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 
 import itertools
-from pathlib import Path
 import pickle
 import random
 import tempfile
-from typing import Optional, Union, Any, Type
+from pathlib import Path
+from typing import Any, Optional, Type, Union
 
 import numpy as np
 import pandas as pd
-from sklearn.utils import _safe_indexing
-
 from loguru import logger
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.utils import _safe_indexing
 
 
 def load_csv(
@@ -61,6 +61,37 @@ def train_test_indexed_split(
 
     n_samples_train = int((1 - test_size) * n_samples)
     train_indices, test_indices = indices[:n_samples_train], indices[n_samples_train:]
+
+    return dict(
+        data=list(
+            itertools.chain.from_iterable(
+                (_safe_indexing(_data, train_indices), _safe_indexing(_data, test_indices))
+                for _data in data
+            )
+        ),
+        indices=dict(train=train_indices, test=test_indices),
+    )
+
+
+def train_test_indexed_split_stratified(X, Y, test_size: float = 0.2, **kwargs) -> dict:
+    """
+    This function is used to return:
+        - splitted data
+        - indices for the split
+    """
+    assert len(X) > 0 and len(Y) > 0
+    n_samples = X.shape[0]
+    data = (X, Y)
+
+    assert len(data) > 0
+    n_samples = data[0].shape[0]
+
+    if not all(_data.shape[0] == n_samples for _data in data):
+        raise ValueError("Shape mismatch between all the input data.")
+
+    train_indices, test_indices = next(
+        StratifiedShuffleSplit(n_splits=1, test_size=test_size).split(X, Y)
+    )
 
     return dict(
         data=list(
