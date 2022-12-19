@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 
+import functools
 import itertools
 import operator
 from abc import ABC, abstractmethod
 from functools import partial, reduce
 from pprint import pprint
-from typing import List, Optional, Tuple, Type, Union
+from typing import Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
 import shap
 from loguru import logger
 from sklearn.base import BaseEstimator
+from tqdm import tqdm
 
 from ..misc.datatools import LoadSaveMixin
 from ..misc.maths import min_max_normalization, shuffle_copy
@@ -435,6 +437,78 @@ class ShapBasedPhenotypeFeatureScorer(PhenotypeFeatureScorer):
         return self._get_common_features(*features)
 
 
+class UnifiedFeatureScorer(PhenotypeFeatureScorer):
+    """
+    This feature scorer is used to combine (union) all the features
+    from given classifiers
+
+    Args:
+        `*classifiers`: Union[
+                BulkTrainer,
+                Type[BaseEstimator],
+                SinglePhenotypeClassifier,
+                MultiPhenotypeIsolatedClassifier
+            ]
+            Vardiac arguments for N number of `BulkTrainer` instances
+            to unravel
+
+        `top_k`: `int`
+            How many top features to consider?
+
+        `at_model_level`: `bool`
+            If enabled, all the instances of `Type[AbstractPhenotypeClassifier]`
+            will be flattened to `Type[BaseEstimator]` (eg: XGBClassifier).
+            This gives a list of BaseEstimator for which feature importance
+            is computed independently and then combined. Else, we go with usual Classifier-level computation.
+
+            Note: This might give us
+            a larger feature set as we are performing union operation
+            across all the sklearn models.
+    """
+
+    def get_features(
+        self,
+        top_k: int = 100,
+        at_model_level: bool = False,
+        **kwargs,
+    ) -> List[Tuple[str, float]]:
+
+        ignore_zeros = kwargs.get("ignore_zeros", True)
+        normalize = kwargs.get("normalize", True)
+
+        # only unravel bulk trainer and then add other classifers without change
+        clfs = (
+            self.models
+            if at_model_level
+            else self._unravel_bulk_trainer(*self.classifiers)
+            + tuple(filter(lambda clf: not isinstance(clf, BulkTrainer), self.classifiers))
+        )
+        if not clfs:
+            logger.warning("No classifiers detected. Returning empty list!")
+            return []
+        features = map(
+            lambda clf: PhenotypeFeatureScorer(clf).get_features(
+                top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
+            ),
+            clfs,
+        )
+        features = reduce(
+            operator.concat,
+            features,
+        )
+        if self.debug:
+            logger.debug(f"All features (n={len(features)}) => {features}")
+
+        res = []
+        # need to sort to perform itertools.groupby
+        # behaviour is just like `uniq` from Unix
+        features = sorted(features)
+        for key, group in itertools.groupby(features, operator.itemgetter(0)):
+            scores = tuple(map(lambda g: g[1], group))
+            res.append((key, sum(scores) / len(scores)))
+        return sorted(res, key=lambda x: x[1], reverse=True)
+
+
 class GeneRanker(FeatureScorer):
     """
     This is used for performing feature ranking/scoring for a single genotype
@@ -512,6 +586,8 @@ class GeneRanker(FeatureScorer):
                 Input dataframe with genes and targets
             `test_size`: `float`
                 How much portion of data is used for splitting to test?
+            `top_k`: `int`
+                How many number of top features to return from each model?
         """
         if self.features_:
             return self.features_
@@ -573,76 +649,97 @@ class GeneRanker(FeatureScorer):
             logger.warning("Cannot plot histogram. plotly might not be installed.")
 
 
-class UnifiedFeatureScorer(PhenotypeFeatureScorer):
+class MeanReciprocalRanker(FeatureScorer):
     """
-    This feature scorer is used to combine (union) all the features
-    from given classifiers
+    This ranker use MRR algorithm inspired from document query system but for feature relevance.
+    (See: https://en.wikipedia.org/wiki/Mean_reciprocal_rank)
+
+    Once all the N models are trained (using `GeneRanker`), use these models to compute
+    mean-reciprocal ranks for all the gene features aggregated.
 
     Args:
-        `*classifiers`: Union[
-                BulkTrainer,
-                Type[BaseEstimator],
-                SinglePhenotypeClassifier,
-                MultiPhenotypeIsolatedClassifier
-            ]
-            Vardiac arguments for N number of `BulkTrainer` instances
-            to unravel
-
-        `top_k`: `int`
-            How many top features to consider?
-
-        `at_model_level`: `bool`
-            If enabled, all the instances of `Type[AbstractPhenotypeClassifier]`
-            will be flattened to `Type[BaseEstimator]` (eg: XGBClassifier).
-            This gives a list of BaseEstimator for which feature importance
-            is computed independently and then combined. Else, we go with usual Classifier-level computation.
-
-            Note: This might give us
-            a larger feature set as we are performing union operation
-            across all the sklearn models.
+        `*classifiers`: SinglePhenotypeClassifier
+                Vardiac arguments for N number of `SinglePhenotypeClassifier` instances
+                to unravel
+        `score_cutoff`: `float`
+            Cut-off threshold for feature score we get from each model (from `classifiers`).
+            Defaults to 0.05
+        `rank_cutoff`: `float`
+            Cut-off threshold for final ranks. `>=rank_cutoff` genes will only be returned
+        `debug`: `bool`
+            Flag to denote debug mode
     """
+
+    def __init__(
+        self, *classifiers, score_cutoff: float = 0.05, rank_cutoff: float = 0, debug: bool = False
+    ) -> None:
+        super().__init__(debug=debug)
+        self.classifiers = classifiers
+        self.score_cutoff = score_cutoff
+        self.rank_cutoff = rank_cutoff
+        self.rankmap = {}
 
     def get_features(
         self,
-        top_k: int = 100,
-        at_model_level: bool = False,
-        **kwargs,
+        top_k: int = 500,
+        normalize: bool = True,
+        ignore_zeros: bool = True,
     ) -> List[Tuple[str, float]]:
+        """
+        Compute list of ranked features using  the trained models
+        based on  MRR algorithm.
 
-        ignore_zeros = kwargs.get("ignore_zeros", True)
-        normalize = kwargs.get("normalize", True)
+        Args:
+            `top_k`: `int`
+                How many number of top features to return from each model?
+            `normalize`: `bool`
+                Normalize ranks in the [0, 1] range or not?
+            `ignore_zeros`: `bool`
+                Ignore zero-value features?
+        """
 
-        # only unravel bulk trainer and then add other classifers without change
-        clfs = (
-            self.models
-            if at_model_level
-            else self._unravel_bulk_trainer(*self.classifiers)
-            + tuple(filter(lambda clf: not isinstance(clf, BulkTrainer), self.classifiers))
-        )
-        if not clfs:
-            logger.warning("No classifiers detected. Returning empty list!")
-            return []
-        features = map(
-            lambda clf: PhenotypeFeatureScorer(clf).get_features(
-                top_k=top_k, ignore_zeros=ignore_zeros, normalize=normalize
-            ),
-            clfs,
-        )
-        features = reduce(
-            operator.concat,
-            features,
-        )
         if self.debug:
-            logger.debug(f"All features (n={len(features)}) => {features}")
+            logger.debug(f"{len(self.classifiers)} in use.")
+        if not self.classifiers:
+            return []
 
-        res = []
-        # need to sort to perform itertools.groupby
-        # behaviour is just like `uniq` from Unix
-        features = sorted(features)
-        for key, group in itertools.groupby(features, operator.itemgetter(0)):
-            scores = tuple(map(lambda g: g[1], group))
-            res.append((key, sum(scores) / len(scores)))
+        features = map(
+            lambda clf: list(
+                filter(
+                    lambda f: f[1] >= self.score_cutoff,
+                    PhenotypeFeatureScorer(clf).get_features(
+                        top_k=top_k, ignore_zeros=ignore_zeros, normalize=True
+                    ),
+                )
+            ),
+            self.classifiers,
+        )
+        features = list(features)
+        _features_flattened = functools.reduce(operator.concat, features)
+        _unified = set(map(lambda x: x[0], _features_flattened))
+        self.rankmap = {gene: self._compute_ranks(gene, features) for gene in tqdm(_unified)}
+
+        res = [(gene, self._compute_mrr(gene, ranks)) for gene, ranks in self.rankmap.items()]
+        if normalize:
+            fts, mrrs = zip(*res)
+            res = zip(fts, min_max_normalization(mrrs))
+        res = filter(lambda x: x[1] > self.rank_cutoff, res)
         return sorted(res, key=lambda x: x[1], reverse=True)
+
+    def _compute_mrr(self, feature, ranks) -> float:
+        return sum(map(lambda x: 1 / x if x > 0 else 0, ranks)) / len(ranks)
+
+    def _compute_ranks(self, feature, features_list) -> Dict[str, List[int]]:
+        res = []
+        for _fts in features_list:
+            _fts, _ = zip(*_fts)
+            rank = 0
+            try:
+                rank = _fts.index(feature) + 1
+            except ValueError:
+                rank = 0
+            res.append(rank)
+        return res
 
 
 def main():
