@@ -200,3 +200,7 @@ features_mrr = MeanReciprocalRanker(
 ).get_features()
 
 ```
+
+---
+
+For further deep-down, please check  `notebooks/gene-ranker-pipeline.ipynb` notebook.
