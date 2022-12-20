@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import List, Optional, Type
+from typing import List, Optional, Type, Union
 
 import pandas as pd
 import xgboost
@@ -17,6 +17,40 @@ from skopt.space import Integer, Real
 
 
 class BayesTuner:
+    """
+    This module is used to find the best parameter for xgboost model.
+
+    Args:
+        `columns`: `List[str]`
+            List of feature column names to be used
+        `target_column`: `str`
+            The target column for classification task
+        `n_iter`: `int`
+            Total number of iteration to perform for search.
+            Defaults to `10`
+        `n_jobs`: `int`
+            Total number of jobs in parallel. Defaults to 4.
+        `objective`: `str`
+            Objective function used for xgboost training.
+            Can be either of:
+                - 'multi:softmax' (for multi-class)
+                - 'binary:logistic' (for binary classification)
+        `k_folds`: `int`
+            Total number of folds to use for search
+        `callbacks`: `Optional[List[Union[Type[EarlyStopper], CheckpointSaver]]]`
+            List of `skopt` callbacks object.
+            If this parameter is `None`, no callbacks will be added.
+            If this parameter is an empty list (`[]`), defaults will be generated.
+        `debug`: `bool`
+            Flag for debugging mode
+
+    Properties & Methods:
+        - `search`: The entry-point method to start the search
+        - `best_params`: `dict` that has the best params once search has
+        ended
+        - `best_score`: `float` that represents the best model found
+    """
+
     # early stopping params (see _get_callbacks(...))
     _ES_DELTA_Y = 1e-4  # the search doesn't progress by this delta, stop
     _ES_DEADLINE = 60 * 60 * 2  # 2 hours before stopping the tuner
@@ -29,7 +63,7 @@ class BayesTuner:
         n_jobs: int = 4,
         objective: str = "multi:softmax",
         k_folds: int = 3,
-        callbacks: Optional[List[Type[EarlyStopper]]] = None,
+        callbacks: Optional[List[Union[Type[EarlyStopper], CheckpointSaver]]] = None,
         debug: bool = False,
     ) -> None:
         self.columns = list(columns)
@@ -86,6 +120,14 @@ class BayesTuner:
         return callbacks
 
     def search(self, data: pd.DataFrame):
+        """
+        Args:
+            `data`: `pd.DataFrame`
+                Input dataframe for gene data (contains both gene expresison and metadata columns)
+
+        Returns:
+            Tuned object
+        """
         target_encoded = preprocessing.LabelEncoder().fit_transform(data[self.target_column])
         self.result = self.tuner.fit(data[self.columns], target_encoded, callback=self.callbacks)
         return self.result

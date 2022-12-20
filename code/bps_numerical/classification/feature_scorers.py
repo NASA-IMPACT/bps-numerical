@@ -527,6 +527,13 @@ class GeneRanker(FeatureScorer):
 
         `debug`: `bool`
             If enabled, some debug mode logs/diagrams will be rendered
+
+        `shuffle_columns`: `bool`
+            If enabled, different models will see shuffled version of column order
+
+        `xgboost_params`:
+            Extra parameters that is passed to each `xgboost` model to provide
+            fine-grained path
     """
 
     def __init__(
