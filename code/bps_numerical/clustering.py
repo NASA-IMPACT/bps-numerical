@@ -2,7 +2,7 @@
 
 import random
 import time
-from typing import Dict, List, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,6 +32,8 @@ class CorrelationClusterer:
         cutoff_threshold: float = 0.75,
         debug: bool = False,
         correlation_type: str = "pearson",
+        dist_matrix: Optional[np.ndarray] = None,
+        linkage_type: str = "average",
     ):
         self.column_names = column_names
         self.cutoff_threshold = cutoff_threshold
@@ -39,6 +41,8 @@ class CorrelationClusterer:
         self.cluster_map = {}
         self.debug = debug
         self.correlation_type = correlation_type
+        self.dist_matrix = dist_matrix
+        self.linkage_type = linkage_type
 
     @staticmethod
     def compute_pearson_correlation(df: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
@@ -114,8 +118,10 @@ class CorrelationClusterer:
             to the gene columns.
         """
         logger.info("Clustering in progress...")
-        dists = 1 - np.round(abs(arr), 3)
-        hierarchy = sch.linkage(squareform(dists), method='average')
+        self.dist_matrix = (
+            self.dist_matrix if self.dist_matrix is not None else (1 - np.round(abs(arr), 3))
+        )
+        hierarchy = sch.linkage(squareform(self.dist_matrix), method=self.linkage_type)
         labels = sch.fcluster(hierarchy, cutoff_threshold, criterion='distance')
 
         if self.debug:
@@ -509,7 +515,8 @@ class SamplingBasedClusterAnalyzer:
         n_samples = min(len(cluster), n_samples)
         return random.sample(cluster, k=(min(len(cluster), n_samples)))
 
-    def _restructure_cluster_map(self, cluster_map: Dict[int, List[str]]) -> Dict[str, Tuple[str]]:
+    @staticmethod
+    def _restructure_cluster_map(cluster_map: Dict[int, List[str]]) -> Dict[str, Tuple[str]]:
         """
         This restructures the input cluster_map dict in the format:
 
@@ -536,6 +543,102 @@ class SamplingBasedClusterAnalyzer:
             for candidate in cluster:
                 resultant[candidate] = cluster
         return resultant
+
+
+class FeatureGrouper:
+    def __init__(
+        self,
+        feature_names: Optional[List[str]] = None,
+        threshold: float = 0.0,
+        dist_func: Optional[Callable] = None,
+        debug: bool = False,
+    ) -> None:
+        self.feature_names = feature_names
+        self.threshold = threshold
+        self.dist_func = dist_func
+        self.debug = bool(debug)
+        self.dist_matrix = None
+
+    def cluster(
+        self,
+        data: Union[pd.DataFrame, np.ndarray],
+        dist_matrix: Optional[np.ndarray] = None,
+    ) -> Dict[int, List[str]]:
+        """
+        This method groups the features based on threshold
+        applied to the distances.
+
+        Args:
+            ```data```: ```Union[pd.DataFrame, np.ndarray]```
+                Input data to be used to get:
+                    - feature names if not provided in the constructor
+                    - compute distance matrix if not provided
+
+            ```dist_matrix````: ```Optional[np.ndarray]```
+                If provided, this is a square matrix to represent
+                distance between all the feature vectors.
+                If this is None, we use `dist_func` function
+                to compute this matrix
+
+            ```dist_func```: ```Optional[Callable]```
+                This is the function to be used to compute the NxN
+                distance matrix given features
+
+        Ret:
+            List of tuple.
+            Each tuple is a group with feature names or indices.
+
+        Note:
+            If feature_names is not provided, we first try to infer it
+            from the pandas dataframe. Else we use generic integer indices
+            representing the column location.
+        """
+        feature_names = self.feature_names
+        if feature_names is None and isinstance(data, pd.DataFrame):
+            feature_names = data.columns.to_list()
+            data = data[feature_names]  # if pandas DF, filter the columns
+        elif feature_names is None and isinstance(data, np.ndarray):
+            feature_names = list(range(data.shape[1]))
+
+        dist_matrix = self.dist_matrix if dist_matrix is None else dist_matrix
+        if dist_matrix is None:
+            logger.info(f"dist_matrix is None. Using {self.dist_func} function")
+            dist_matrix = self.dist_func(data)
+        # no group will be formed
+        if self.threshold == 1.0:
+            return []
+        # everything lies in single group
+        elif self.threshold == 0.0:
+            return [tuple(feature_names.copy())]
+
+        res = []
+        open_features = set(range(len(feature_names)))
+        closed_features = set()
+        while len(open_features) > 0:
+            # get 1 feature and compute for its group
+            f_idx = tuple(open_features)[0]
+            _dists = dist_matrix[f_idx]
+
+            # for f_idx, find its group
+            indices = np.argwhere(_dists > self.threshold).flatten()
+
+            # remove indices that are already in a group
+            indices = set(map(int, indices)) - closed_features
+
+            res.append(tuple(indices))
+            closed_features.update(indices)
+            open_features = open_features - indices
+
+        # cache the dist_matrix for downstream tasks!
+        self.dist_matrix = dist_matrix
+
+        return dict(
+            map(lambda grp: (grp[0], [feature_names[idx] for idx in grp[1]]), enumerate(res))
+        )
+
+    @property
+    def column_names(self) -> List[str]:
+        return self.feature_names
 
 
 def main():

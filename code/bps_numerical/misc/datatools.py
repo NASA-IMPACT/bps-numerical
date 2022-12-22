@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 
 import itertools
+import pickle
 import random
-from typing import Optional, Union
+import tempfile
+from pathlib import Path
+from typing import Any, Optional, Type, Union
 
 import numpy as np
 import pandas as pd
+from loguru import logger
+from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.utils import _safe_indexing
 
 
@@ -66,6 +71,81 @@ def train_test_indexed_split(
         ),
         indices=dict(train=train_indices, test=test_indices),
     )
+
+
+def train_test_indexed_split_stratified(X, Y, test_size: float = 0.2, **kwargs) -> dict:
+    """
+    This function is used to return:
+        - splitted data
+        - indices for the split
+    """
+    assert len(X) > 0 and len(Y) > 0
+    n_samples = X.shape[0]
+    data = (X, Y)
+
+    assert len(data) > 0
+    n_samples = data[0].shape[0]
+
+    if not all(_data.shape[0] == n_samples for _data in data):
+        raise ValueError("Shape mismatch between all the input data.")
+
+    train_indices, test_indices = next(
+        StratifiedShuffleSplit(n_splits=1, test_size=test_size).split(X, Y)
+    )
+
+    return dict(
+        data=list(
+            itertools.chain.from_iterable(
+                (_safe_indexing(_data, train_indices), _safe_indexing(_data, test_indices))
+                for _data in data
+            )
+        ),
+        indices=dict(train=train_indices, test=test_indices),
+    )
+
+
+class LoadSaveMixin:
+    def save(self, fname: Union[str, Path] = "tmp/classifier.pkl") -> Type[Any]:
+        """
+        Save the classifier to a binary file using pickle
+
+        Args:
+            `fname`: ```Union[str, Path]```
+                Where to save the file?
+                    - If directory, a random unique filename is added
+                        in the format:
+                            <classname>__<len(cols_genes)>__<random_string>
+                    - If file, that name is used
+
+        Returns:
+            The class object itself.
+
+        """
+        path = Path(fname)
+        if path.is_dir():
+            path.mkdir(parents=True, exist_ok=True)
+            tmp_name = next(tempfile._get_candidate_names())
+            path = path.joinpath(f"{self.__classname__}__{len(self.cols_genes)}__{tmp_name}.pkl")
+        logger.info(f"Saving classifier to {path}")
+        with open(path, "wb") as fp:
+            pickle.dump(self, fp)
+        return self
+
+    @classmethod
+    def load(cls, fname: Union[str, Path]) -> Type[Any]:
+        """
+        Load the classifier object
+
+        Args:
+            `fname`: ```Union[str, Path]```
+                Path to the file to load
+
+        Returns:
+            The classifier object
+
+        """
+        with open(fname, "rb") as fp:
+            return pickle.load(fp)
 
 
 def main():

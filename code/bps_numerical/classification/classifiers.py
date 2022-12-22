@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import copy
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -11,12 +13,16 @@ import xgboost
 from loguru import logger
 from sklearn.base import BaseEstimator
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.preprocessing import LabelBinarizer, LabelEncoder
 from tqdm import tqdm
 
-from ..misc.datatools import train_test_indexed_split
+from ..misc.datatools import LoadSaveMixin
+from ..misc.datatools import (
+    train_test_indexed_split_stratified as train_test_indexed_split,
+)
 
 
-class AbstractPhenotypeClassifier(ABC):
+class AbstractPhenotypeClassifier(LoadSaveMixin, ABC):
     """
     This represents the component type for training the ML models
     """
@@ -86,10 +92,10 @@ class AbstractPhenotypeClassifier(ABC):
         logger.debug(f"Training took {end-start} seconds.")
 
         preds = model.predict(X_test)
+        preds = np.asarray(preds).argmax(axis=1) if preds.ndim > 1 else preds
 
-        metrics["confusion_matrix"] = confusion_matrix(
-            np.asarray(Y_test).argmax(axis=1), np.asarray(preds).argmax(axis=1)
-        )
+        Y_test = np.asarray(Y_test).argmax(axis=1) if Y_test.ndim > 1 else Y_test
+        metrics["confusion_matrix"] = confusion_matrix(Y_test, preds)
         metrics["classification_report"] = classification_report(
             Y_test,
             preds,
@@ -97,6 +103,10 @@ class AbstractPhenotypeClassifier(ABC):
             output_dict=True,
         )
         return metrics
+
+    @property
+    def __classname__(self) -> str:
+        return self.__class__.__name__
 
 
 class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
@@ -128,10 +138,13 @@ class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
         phenotype: str,
         model: Optional[Type[BaseEstimator]] = None,
         debug: bool = False,
+        target_encoder: Optional[Union[LabelEncoder, LabelBinarizer]] = None,
+        **xgboost_params,
     ) -> None:
         super().__init__(cols_genes, debug)
         self.phenotype = phenotype
-        self.model = model or xgboost.XGBClassifier()
+        self.model = model or xgboost.XGBClassifier(**xgboost_params)
+        self.target_encoder = target_encoder or LabelEncoder()
 
     def train(self, data: pd.DataFrame, test_size: float = 0.2, **kwargs) -> Dict[str, Any]:
         """
@@ -167,9 +180,11 @@ class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
         """
         target_counts = data[self.phenotype].value_counts()
         data = data[self.cols_genes + [self.phenotype]]
-        data = pd.get_dummies(data)
 
-        labels = sorted(list(set(data.columns) - set(self.cols_genes) - set([self.phenotype])))
+        # labels = sorted(list(set(data.columns) - set(self.cols_genes) - set([self.phenotype])))
+        Y = self.target_encoder.fit_transform(data[self.phenotype])
+
+        labels = self.target_encoder.classes_
 
         if self.debug:
             logger.debug(f"Target phenotype stats:: {target_counts}")
@@ -177,7 +192,8 @@ class SinglePhenotypeClassifier(AbstractPhenotypeClassifier):
 
         splitted_data = train_test_indexed_split(
             data[self.cols_genes],
-            data[labels],
+            # data[labels],
+            Y,
             test_size=test_size,
             shuffle=kwargs.get("shuffle", True),
         )
