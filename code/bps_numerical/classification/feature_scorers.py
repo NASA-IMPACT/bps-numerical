@@ -604,7 +604,7 @@ class GeneRanker(FeatureScorer):
         # find params and rebuilt classifiers
         if self.params_finder is not None:
             logger.info("Finding best params...")
-            res = self.params_finder.search(data)
+            _ = self.params_finder.search(data)
             xgboost_params.update(dict(self.params_finder.best_params))
             logger.debug(f"Best params = {xgboost_params}")
             logger.debug(f"Best score at {self.params_finder.best_score}")

@@ -3,22 +3,16 @@ from typing import List, Tuple
 import pandas as pd
 from loguru import logger
 
-MATPLOTLIB = True
 PLOTLY = True
 try:
     import plotly.express as px
 except ModuleNotFoundError:
     PLOTLY = False
 
-try:
-    import matplotlib.pyplot as plt
-except ModuleNotFoundError:
-    MATPLOTLIB = False
-
 
 def plot_feature_scores(feature_scores: List[Tuple[str, int]], title=None, **kwargs):
-    if not MATPLOTLIB or not PLOTLY:
-        logger.warning("MATPLOTLIB/PLOTLY not found!")
+    if not PLOTLY:
+        logger.warning("PLOTLY not found!")
         return False
 
     data = sorted(feature_scores, key=lambda f: f[1])

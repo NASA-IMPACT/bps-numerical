@@ -94,7 +94,7 @@ class DataLoader:
 
     @property
     def gene_data(self) -> pd.DataFrame:
-        logger.info(f"Loading gene only data...")
+        logger.info("Loading gene only data...")
         df_genes = self.df_genes
         if df_genes is None:
             df_genes = standardize_gene_data(self.csv_gene, scaler=self.scaler)
